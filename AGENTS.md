@@ -19,7 +19,6 @@
 ### Output
 - Reports are written inside the journey folder under `reports-<timestamp>/` as JSON and CSV.
 - Output filenames include a run id derived from the journey name and timestamp.
-- Each report folder includes `report-schema.json` describing the CSV columns.
 - Two CSV files are produced: `<runId>.csv` (human-friendly) and `technical_<runId>.csv` (full technical report).
 - `request_count` is computed within a step window (start to end). `window_duration_ms` reports that window length. Each row includes `page_url` after the step finishes.
 
@@ -93,6 +92,14 @@
 
 ## Cursor / Copilot Rules
 - No `.cursor/rules/`, `.cursorrules`, or `.github/copilot-instructions.md` files are present.
+
+## Metrics References
+- EcoIndex methodology: https://www.ecoindex.fr/comment-ca-marche/
+- EcoIndex quantiles: https://raw.githubusercontent.com/cnumr/EcoIndex_python/main/components/ecoindex/data/quantiles.py
+- EcoIndex grades: https://raw.githubusercontent.com/cnumr/EcoIndex_python/main/components/ecoindex/data/grades.py
+- EcoIndex formula: https://raw.githubusercontent.com/cnumr/EcoIndex_python/main/components/ecoindex/compute/ecoindex.py
+- GreenIT-Analysis: https://github.com/cnumr/GreenIT-Analysis
+- GreenIT DOM count method: https://raw.githubusercontent.com/cnumr/GreenIT-Analysis/master/script/analyseFrame.js
 
 ## Practical Examples
 

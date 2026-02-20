@@ -9,13 +9,19 @@ async function main() {
   logProgress(`Loading config from ${cfgPath}`);
   logProgress(`Config loaded (name: ${cfg.name || "journey"}, steps: ${cfg.steps?.length || 0})`);
 
-  const { report, reportSchema, outDir, runId } = await runJourney({ cfg, cfgPath });
-  const { jsonPath, csvPath, schemaPath, technicalCsvPath } = writeReport({ report, reportSchema, outDir, runId });
+  const { report, outDir, runId, requestDetails } = await runJourney({ cfg, cfgPath });
+  const { csvPath, technicalCsvPath, requestsPath } = writeReport({
+    report,
+    outDir,
+    runId,
+    requestDetails,
+  });
 
-  console.log(`OK: ${jsonPath}`);
   console.log(`OK: ${csvPath}`);
   console.log(`OK: ${technicalCsvPath}`);
-  console.log(`OK: ${schemaPath}`);
+  if (requestsPath) {
+    console.log(`OK: ${requestsPath}`);
+  }
 }
 
 main().catch((err) => {

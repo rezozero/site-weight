@@ -4,6 +4,7 @@ import path from "node:path";
 import { chromium } from "playwright";
 
 import { logProgress, warnProgress } from "../utils/logger.js";
+import { computeEcoindex } from "../utils/ecoindex.js";
 import { nowIsoSafe, sleep } from "../utils/time.js";
 import { normalizeTrailingSlash } from "../utils/url.js";
 import {
@@ -13,26 +14,6 @@ import {
   createCdpTracker,
   settle,
 } from "./collect-metrics.js";
-
-function buildReportSchema() {
-  return {
-    step_index: "Index of the step (0 = start).",
-    step_name: "Human-readable step name (url or provided name).",
-    page_url: "Current page URL after the step finishes.",
-    mode: "Measurement mode (per_step or cumulative).",
-    decompressed_kb: "Estimated decompressed payload size in kB for this step.",
-    compressed_kb: "Estimated compressed payload size in kB for this step.",
-    request_count: "Number of network requests counted within the step window (start to end).",
-    window_duration_ms: "Duration of the step window in milliseconds.",
-    perf_decoded_coverage_pct: "Percent of requests with decodedBodySize available from ResourceTiming.",
-    decompressed_method: "Method used to estimate decompressed size.",
-    compressed_method: "Method used to estimate compressed size.",
-    scroll_to_end: "Whether auto-scroll to end is enabled for this run.",
-    link_match: "How a link href matched the target (absolute, relative, or none).",
-    navigation_fallback: "Fallback navigation method when no link matched.",
-    action: "Action taken for this step (click or location).",
-  };
-}
 
 export async function runJourney({ cfg, cfgPath }) {
   const runId = `${(cfg.name || "journey").slice(0, 40)}__${nowIsoSafe()}`.replace(/\s+/g, "_");
@@ -205,6 +186,31 @@ export async function runJourney({ cfg, cfgPath }) {
     windowStartTimes.set(idx, windowStartMs);
     windowEndTimes.set(idx, Date.now());
     step.pageUrl = page.url();
+    step.domNodes = await page.evaluate(() => {
+      function getNbChildsExcludingNestedSvg(element) {
+        if (element.nodeType === Node.TEXT_NODE) return 0;
+        let nbElements = 1;
+        for (let i = 0; i < element.childNodes.length; i += 1) {
+          if (element.childNodes[i].tagName !== "svg") {
+            nbElements += getNbChildsExcludingNestedSvg(element.childNodes[i]);
+          } else {
+            nbElements += 1;
+          }
+        }
+        return nbElements;
+      }
+
+      function getDomSizeWithoutSvg() {
+        let domSize = document.getElementsByTagName("*").length;
+        const svgElements = document.getElementsByTagName("svg");
+        for (let i = 0; i < svgElements.length; i += 1) {
+          domSize -= getNbChildsExcludingNestedSvg(svgElements[i]) - 1;
+        }
+        return domSize;
+      }
+
+      return Math.max(0, getDomSizeWithoutSvg());
+    });
   }
 
   logProgress(`Start at ${cfg.startUrl}`);
@@ -217,15 +223,37 @@ export async function runJourney({ cfg, cfgPath }) {
   windowStartTimes.set(0, startActionMs);
   windowEndTimes.set(0, Date.now());
   const startPageUrl = page.url();
+  const startDomNodes = await page.evaluate(() => {
+    function getNbChildsExcludingNestedSvg(element) {
+      if (element.nodeType === Node.TEXT_NODE) return 0;
+      let nbElements = 1;
+      for (let i = 0; i < element.childNodes.length; i += 1) {
+        if (element.childNodes[i].tagName !== "svg") {
+          nbElements += getNbChildsExcludingNestedSvg(element.childNodes[i]);
+        } else {
+          nbElements += 1;
+        }
+      }
+      return nbElements;
+    }
+
+    function getDomSizeWithoutSvg() {
+      let domSize = document.getElementsByTagName("*").length;
+      const svgElements = document.getElementsByTagName("svg");
+      for (let i = 0; i < svgElements.length; i += 1) {
+        domSize -= getNbChildsExcludingNestedSvg(svgElements[i]) - 1;
+      }
+      return domSize;
+    }
+
+    return Math.max(0, getDomSizeWithoutSvg());
+  });
 
   const baselineStepIndex = 0;
   const results = [];
 
   currentStepIndex = 0;
-  results.push({
-    name: cfg.steps?.[0]?.name || "Start",
-    page_url: startPageUrl,
-    ...(await computeStepMetrics({
+  const startMetrics = await computeStepMetrics({
       cfg,
       step: cfg.steps?.[0],
       stepIndex: 0,
@@ -235,7 +263,19 @@ export async function runJourney({ cfg, cfgPath }) {
       windowStartTimes,
       windowEndTimes,
       page,
-    }))
+    });
+  const startEcoindex = computeEcoindex({
+    domNodes: startDomNodes,
+    sizeKb: startMetrics.compressed_kb,
+    requests: startMetrics.request_count,
+  });
+  results.push({
+    name: cfg.steps?.[0]?.name || "Start",
+    page_url: startPageUrl,
+    dom_nodes: startDomNodes,
+    ecoindex_score: startEcoindex.score,
+    ecoindex_grade: startEcoindex.grade,
+    ...startMetrics,
   });
   logProgress("Step 0 completed");
 
@@ -253,7 +293,19 @@ export async function runJourney({ cfg, cfgPath }) {
       windowEndTimes,
       page,
     });
-    results.push({ name: steps[i].name || `Step ${i}`, page_url: steps[i].pageUrl || "", ...metrics });
+    const ecoindex = computeEcoindex({
+      domNodes: steps[i].domNodes || 0,
+      sizeKb: metrics.compressed_kb,
+      requests: metrics.request_count,
+    });
+    results.push({
+      name: steps[i].name || `Step ${i}`,
+      page_url: steps[i].pageUrl || "",
+      dom_nodes: steps[i].domNodes || 0,
+      ecoindex_score: ecoindex.score,
+      ecoindex_grade: ecoindex.grade,
+      ...metrics,
+    });
     const action = metrics?.notes?.action || "";
     const linkMatch = metrics?.notes?.linkMatch || "";
     const target = steps[i]?.absoluteUrl || steps[i]?.url || "";
@@ -265,7 +317,11 @@ export async function runJourney({ cfg, cfgPath }) {
 
   logProgress(`Journey completed (${results.length} steps)`);
 
-  const reportSchema = buildReportSchema();
+  const requestDetails = {
+    runId,
+    generatedAt: new Date().toISOString(),
+    steps: [],
+  };
   const report = {
     runId,
     name: cfg.name || "journey",
@@ -274,16 +330,55 @@ export async function runJourney({ cfg, cfgPath }) {
     settle: cfg.settle || {},
     scroll: cfg.scroll || {},
     generatedAt: new Date().toISOString(),
-    reportSchema,
     results,
   };
+
+  for (let i = 0; i < results.length; i += 1) {
+    const result = results[i];
+    const windowStartMs = windowStartTimes.get(result.stepIndex) ?? null;
+    const windowEndMs = windowEndTimes.get(result.stepIndex) ?? null;
+    const windowDurationMs =
+      typeof windowStartMs === "number" && typeof windowEndMs === "number"
+        ? Math.max(0, Math.round(windowEndMs - windowStartMs))
+        : 0;
+
+    const requests = [];
+    for (const rec of cdpReq.values()) {
+      if (rec.stepIndex !== result.stepIndex) continue;
+      if (typeof windowStartMs === "number" && rec.requestStartMs < windowStartMs) continue;
+      if (typeof windowEndMs === "number" && rec.requestStartMs > windowEndMs) continue;
+
+      requests.push({
+        request_id: rec.requestId,
+        url: rec.url,
+        method: rec.method || "",
+        type: rec.type || "",
+        status: rec.status ?? null,
+        encoded_bytes: rec.encodedBytes ?? 0,
+        request_start_ms: rec.requestStartMs ?? null,
+        from_disk_cache: rec.fromDiskCache ?? false,
+        from_service_worker: rec.fromServiceWorker ?? false,
+        mime_type: rec.mimeType || "",
+      });
+    }
+
+    requestDetails.steps.push({
+      step_index: result.stepIndex,
+      step_name: result.name,
+      page_url: result.page_url || "",
+      window_start_ms: windowStartMs,
+      window_end_ms: windowEndMs,
+      window_duration_ms: windowDurationMs,
+      requests,
+    });
+  }
 
   await browser.close();
 
   return {
     report,
-    reportSchema,
     outDir,
     runId,
+    requestDetails,
   };
 }

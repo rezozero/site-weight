@@ -1,16 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
 
-export function writeReport({ report, reportSchema, outDir, runId }) {
-  const formatDecimal = (value) => {
-    if (value === null || value === undefined) return "";
-    return String(value).replace(".", ",");
-  };
-  const jsonPath = path.join(outDir, `${runId}.json`);
-  fs.writeFileSync(jsonPath, JSON.stringify(report, null, 2), "utf-8");
-
+export function writeReport({ report, outDir, runId, requestDetails }) {
   const technicalCsvLines = [
-    "step_index,step_name,page_url,mode,decompressed_kb,compressed_kb,request_count,window_duration_ms,perf_decoded_coverage_pct,decompressed_method,compressed_method,scroll_to_end,link_match,navigation_fallback,action",
+    "step_index,step_name,page_url,dom_nodes,mode,decompressed_kb,compressed_kb,request_count,window_duration_ms,ecoindex_score,ecoindex_grade,perf_decoded_coverage_pct,decompressed_method,compressed_method,scroll_to_end,link_match,navigation_fallback,action",
   ];
 
   for (const r of report.results) {
@@ -19,12 +12,15 @@ export function writeReport({ report, reportSchema, outDir, runId }) {
         r.stepIndex,
         `"${String(r.name).replace(/"/g, '""')}"`,
         `"${String(r.page_url || "").replace(/"/g, '""')}"`,
+        r.dom_nodes,
         r.mode,
-        formatDecimal(r.decompressed_kb),
-        formatDecimal(r.compressed_kb),
+        r.decompressed_kb,
+        r.compressed_kb,
         r.request_count,
         r.window_duration_ms,
-        formatDecimal(r.notes.perfDecodedCoveragePct),
+        r.ecoindex_score,
+        r.ecoindex_grade || "",
+        r.notes.perfDecodedCoveragePct,
         `"${r.notes.decompressedMethod.replace(/"/g, '""')}"`,
         `"${r.notes.compressedMethod.replace(/"/g, '""')}"`,
         r.notes.scrollToEnd ? "true" : "false",
@@ -39,7 +35,7 @@ export function writeReport({ report, reportSchema, outDir, runId }) {
   fs.writeFileSync(technicalCsvPath, technicalCsvLines.join("\n"), "utf-8");
 
   const humanCsvLines = [
-    "index,name,url,taille (decompressé, kB),taille (compressé, kB),nombre de requete",
+    "index,name,url,taille (decompressé kB),taille (compressé kB),nombre de requete,dom_nodes,ecoindex,note",
   ];
 
   for (const r of report.results) {
@@ -48,9 +44,12 @@ export function writeReport({ report, reportSchema, outDir, runId }) {
         r.stepIndex,
         `"${String(r.name).replace(/"/g, '""')}"`,
         `"${String(r.page_url || "").replace(/"/g, '""')}"`,
-        formatDecimal(r.decompressed_kb),
-        formatDecimal(r.compressed_kb),
+        r.decompressed_kb,
+        r.compressed_kb,
         r.request_count,
+        r.dom_nodes,
+        r.ecoindex_score,
+        r.ecoindex_grade || "",
       ].join(",")
     );
   }
@@ -58,8 +57,11 @@ export function writeReport({ report, reportSchema, outDir, runId }) {
   const csvPath = path.join(outDir, `${runId}.csv`);
   fs.writeFileSync(csvPath, humanCsvLines.join("\n"), "utf-8");
 
-  const schemaPath = path.join(outDir, "report-schema.json");
-  fs.writeFileSync(schemaPath, JSON.stringify(reportSchema, null, 2), "utf-8");
+  let requestsPath = null;
+  if (requestDetails) {
+    requestsPath = path.join(outDir, `requests_${runId}.json`);
+    fs.writeFileSync(requestsPath, JSON.stringify(requestDetails, null, 2), "utf-8");
+  }
 
-  return { jsonPath, csvPath, schemaPath, technicalCsvPath };
+  return { csvPath, technicalCsvPath, requestsPath };
 }

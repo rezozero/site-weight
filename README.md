@@ -110,4 +110,19 @@ export default {
 
 ## Output
 
-Reports are written to a timestamped folder inside the journey directory: `/<folder>/reports-<timestamp>/`. Filenames include a run id derived from the journey name and timestamp. Each report folder also includes `report-schema.json` describing the CSV columns and how they are computed. `request_count` is computed within a step window (start to end), and `window_duration_ms` reports that window length. Each row also includes `page_url`, the current page URL after the step finishes. Two CSV files are produced: `<runId>.csv` (human-friendly) and `technical_<runId>.csv` (full technical report).
+Reports are written to a timestamped folder inside the journey directory: `/<folder>/reports-<timestamp>/`. Filenames include a run id derived from the journey name and timestamp. `request_count` is computed within a step window (start to end), and `window_duration_ms` reports that window length. Each row also includes `page_url`, the current page URL after the step finishes. Two CSV files are produced: `<runId>.csv` (human-friendly) and `technical_<runId>.csv` (full technical report).
+
+## EcoIndex sources
+
+We compute EcoIndex using the official quantiles and formula from the EcoIndex Python project, and the public methodology description:
+
+- Quantiles: https://raw.githubusercontent.com/cnumr/EcoIndex_python/main/components/ecoindex/data/quantiles.py
+- Grades: https://raw.githubusercontent.com/cnumr/EcoIndex_python/main/components/ecoindex/data/grades.py
+- Formula: https://raw.githubusercontent.com/cnumr/EcoIndex_python/main/components/ecoindex/compute/ecoindex.py
+- Methodology: https://www.ecoindex.fr/comment-ca-marche/
+
+Official references:
+
+- EcoIndex: https://www.ecoindex.fr/
+- GreenIT-Analysis: https://github.com/cnumr/GreenIT-Analysis
+- GreenIT DOM count method: https://raw.githubusercontent.com/cnumr/GreenIT-Analysis/master/script/analyseFrame.js
