@@ -8,7 +8,7 @@ Goals:
 - Provide two CSV outputs: a human-friendly summary and a technical report, plus a JSON + schema for analysis.
 - Stay compatible with SPA navigation (URL changes, late async calls, prefetch behavior).
 
-This repo contains a small Playwright-based script that measures network weight for a user journey. It executes a journey described in a `journey.js` file inside a folder you provide.
+This repo contains a small Playwright-based CLI that measures network weight for a user journey. It executes a journey described in a `journey.js` file you provide.
 
 ## Install
 
@@ -16,15 +16,17 @@ This repo contains a small Playwright-based script that measures network weight 
 npm install
 ```
 
-## Usage (folder only)
+## Usage
 
-You must pass a folder name. The script will load `journey.js` from inside that folder.
+Pass either a folder (the CLI will look for `journey.js` inside it) or a direct path to a `journey.js` file.
 
 ```bash
-node src/index.js example.com
+npx site-weight ./journey.js
 ```
 
-If the folder does not contain `journey.js`, the script exits with an error.
+```bash
+npx site-weight ./example.com/
+```
 
 ## Journey Config (journey.js)
 
@@ -110,7 +112,7 @@ export default {
 
 ## Output
 
-Reports are written to a timestamped folder inside the journey directory: `/<folder>/reports-<timestamp>/`. Filenames include a run id derived from the journey name and timestamp. `request_count` is computed within a step window (start to end), and `window_duration_ms` reports that window length. Each row also includes `page_url`, the current page URL after the step finishes. Two CSV files are produced: `<runId>.csv` (human-friendly) and `technical_<runId>.csv` (full technical report).
+Reports are written to a timestamped folder inside the `journey.js` directory: `/<journey-folder>/reports-<timestamp>/`. Filenames include a run id derived from the journey name and timestamp. `request_count` is computed within a step window (start to end), and `window_duration_ms` reports that window length. Each row also includes `page_url`, the current page URL after the step finishes. Two CSV files are produced: `<runId>.csv` (human-friendly) and `technical_<runId>.csv` (full technical report).
 
 ## EcoIndex sources
 

@@ -59,15 +59,27 @@ function normalizeConfig(rawCfg) {
   };
 }
 
-export async function loadConfig(folderArg) {
-  if (!folderArg) {
-    throw new Error("Usage: node src/index.js <journey-folder>\nExpected a folder name containing journey.js.");
-  }
-  if (folderArg.endsWith(".json") || folderArg.endsWith(".js") || folderArg.endsWith(".mjs")) {
-    throw new Error("Invalid argument: provide a folder name only, not a file path.");
+export async function loadConfig(inputArg) {
+  if (!inputArg) {
+    throw new Error("Usage: site-weight <path-to-journey.js|folder>");
   }
 
-  const cfgPath = path.join(folderArg, "journey.js");
+  const resolvedPath = path.resolve(process.cwd(), inputArg);
+  let cfgPath = resolvedPath;
+  let stats;
+
+  try {
+    stats = fs.statSync(resolvedPath);
+  } catch {
+    throw new Error(`Missing journey config: ${resolvedPath}`);
+  }
+
+  if (stats.isDirectory()) {
+    cfgPath = path.join(resolvedPath, "journey.js");
+  } else if (!stats.isFile()) {
+    throw new Error(`Invalid journey path: ${resolvedPath}`);
+  }
+
   if (!fs.existsSync(cfgPath)) {
     throw new Error(`Missing journey config: ${cfgPath}`);
   }

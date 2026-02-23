@@ -1,17 +1,22 @@
 {
   "name": "site-weight",
   "version": "1.0.0",
-  "description": "",
+  "description": "CLI to measure network weight of a user journey with Playwright.",
   "main": "src/index.js",
+  "bin": {
+    "site-weight": "src/cli.js"
+  },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "run:celestins": "node src/index.js theatredescelestins.fr"
+    "journey": "node src/cli.js ./journey.sample.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "module",
-  "devDependencies": {
+  "engines": {
+    "node": ">=18.12"
+  },
+  "dependencies": {
     "playwright": "^1.58.2"
   }
 }
