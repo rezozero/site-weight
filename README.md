@@ -21,7 +21,7 @@ npm install
 You must pass a folder name. The script will load `journey.js` from inside that folder.
 
 ```bash
-node src/index.js theatredurondpoint.fr
+node src/index.js example.com
 ```
 
 If the folder does not contain `journey.js`, the script exits with an error.
@@ -34,8 +34,8 @@ Export a default object. Use `steps` for detailed journeys. If `steps` is empty 
 
 ```js
 export default {
-  name: "Theatre des Celestins - parcours type",
-  startUrl: "https://www.theatredescelestins.com/",
+  name: "Example journey",
+  startUrl: "https://www.example.com/",
   mode: "per_step",
   settle: {
     waitUntil: "networkidle",
@@ -76,8 +76,8 @@ export default {
 export default {
   name: "Simple journey",
   urls: [
-    "https://www.theatredescelestins.com/",
-    "https://www.theatredescelestins.com/programmation/",
+    "https://www.example.com/",
+    "https://www.example.com/programme/",
   ],
 };
 ```
@@ -88,8 +88,8 @@ Use `actions` to run multiple actions in a single step. Actions run in order, wi
 
 ```js
 export default {
-  name: "Theatre des Celestins - parcours type",
-  startUrl: "https://www.theatredescelestins.com/",
+  name: "Example journey",
+  startUrl: "https://www.example.com/",
   steps: [
     {
       name: "Aller a la programmation",

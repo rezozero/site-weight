@@ -3,7 +3,7 @@
 
 ## Purpose
 - This repo is a small Node + Playwright script that measures network weight for a user journey.
-- The primary entry point is `src/index.js` and JS configs like `theatredurondpoint.fr/journey.js`.
+- The primary entry point is `src/index.js` and JS configs like `example.com/journey.js`.
 
 ## Build / Lint / Test Commands
 - No tests are configured in this repository. Do not add test commands unless requested.
@@ -13,7 +13,7 @@
 - `npm install`
 
 ### Run (main script)
-- `node src/index.js theatredurondpoint.fr`
+- `node src/index.js example.com`
 - Pass a folder name only; `journey.js` must exist inside that folder.
 
 ### Output
@@ -82,7 +82,7 @@
 - Steps can define `actions` (multi-action sequence). If `actions` is present, `action` is ignored.
 
 ### File and Directory Conventions
-- Place journey configs under a site-specific directory (example: `theatredurondpoint.fr/`).
+- Place journey configs under a site-specific directory (example: `example.com/`).
 - Reports are output to `/<folder>/reports-<timestamp>/`. Do not commit generated reports unless requested.
 
 ## Repo-Specific Workflow Notes
@@ -106,7 +106,7 @@
 ### Measure a journey
 ```bash
 npm install
-node src/index.js theatredurondpoint.fr
+node src/index.js example.com
 ```
 
 ### Add a new journey config
