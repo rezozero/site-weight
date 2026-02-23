@@ -1,7 +1,11 @@
 {
-  "name": "site-weight",
+  "name": "@rezo-zero/site-weight",
   "version": "1.0.0",
   "description": "CLI to measure network weight of a user journey with Playwright.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rezozero/site-weight.git"
+  },
   "main": "src/index.js",
   "bin": {
     "site-weight": "src/cli.js"
@@ -11,7 +15,7 @@
   },
   "keywords": [],
   "author": "",
-  "license": "ISC",
+  "license": "MIT",
   "type": "module",
   "engines": {
     "node": ">=18.12"
