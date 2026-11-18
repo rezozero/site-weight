@@ -27,6 +27,7 @@ The tool follows a **user journey** defined in a `journey.js` file and measures 
 - `decompressed_kb`: estimated via ResourceTiming when possible, with fallback.
 - `dom_nodes`: GreenIT method (excluding `svg` descendants).
 - EcoIndex: computed from observed values (estimate).
+- With `mode: "cumulative"`, `request_count`, `compressed_kb` and the EcoIndex of a step cover the journey from its start instead of the step alone.
 
 ## How to interpret the results
 

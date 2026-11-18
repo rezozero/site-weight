@@ -6,6 +6,8 @@ import { pathToFileURL } from "node:url";
 import { FORCE_ESM_PARAM } from "../utils/force-esm-hooks.js";
 import { isAbsoluteHttpUrl } from "../utils/url.js";
 
+const JOURNEY_MODES = ["per_step", "cumulative"];
+
 const COMMONJS_GLOBAL_ERROR = /\b(module|exports|require) is not defined\b/;
 
 // journey.js is written as an ES module (`export default`), but Node reads a
@@ -115,5 +117,8 @@ export async function loadConfig(inputArg) {
 
   const cfgModule = await importJourneyModule(cfgPath);
   const cfg = normalizeConfig(cfgModule?.default);
+  if (cfg.mode !== undefined && !JOURNEY_MODES.includes(cfg.mode)) {
+    throw new Error(`Invalid config: mode must be one of ${JOURNEY_MODES.join(", ")}.`);
+  }
   return { cfg, cfgPath };
 }

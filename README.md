@@ -93,6 +93,15 @@ export default {
 };
 ```
 
+### Measurement mode
+
+`mode` sets what the transferred size, the request count and the EcoIndex of a step cover:
+
+- `"per_step"` (default): only the requests started during the step.
+- `"cumulative"`: every request since the start of the journey, up to the end of the step. The EcoIndex then uses these totals with the DOM of the current page.
+
+Any other value is rejected. The decompressed size is reported both ways in every mode: per step and as a running total.
+
 ### Simple urls example
 
 `urls` can contain absolute or relative URLs. When `urls` is used, the script tries to click a link whose `href` matches the target URL (absolute match first, then relative, with a trailing slash tolerance). If no link is found, it falls back to `window.location.href` and logs a warning. In this mode, `startUrl` is ignored and each URL becomes a step named after the URL. Relative URLs require `startUrl` to be set.

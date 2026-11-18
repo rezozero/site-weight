@@ -95,17 +95,15 @@ export async function perfSizes(page) {
   });
 }
 
-export function snapshotFromCdp(cdpReq, stepIndex, mode, baselineStepIndex, windowStartTimes, windowEndTimes) {
+// Requests of one step: the cumulative mode adds up these per-step slices in
+// run-journey.js, so the slice itself never depends on the mode.
+export function snapshotFromCdp(cdpReq, stepIndex, windowStartTimes, windowEndTimes) {
   const list = [];
   const windowStartMs = windowStartTimes.get(stepIndex);
   const windowEndMs = windowEndTimes?.get(stepIndex);
   for (const rec of cdpReq.values()) {
     if (!urlIsCounted(rec.url)) continue;
-    if (mode === "per_step") {
-      if (rec.stepIndex !== stepIndex) continue;
-    } else if (rec.stepIndex < baselineStepIndex) {
-      continue;
-    }
+    if (rec.stepIndex !== stepIndex) continue;
     if (typeof windowStartMs === "number" && rec.requestStartMs < windowStartMs) continue;
     if (typeof windowEndMs === "number" && rec.requestStartMs > windowEndMs) continue;
     list.push(rec);
@@ -117,7 +115,6 @@ export async function computeStepMetrics({
   cfg,
   step,
   stepIndex,
-  baselineStepIndex,
   cdpReq,
   decompressedFallbackByRequestId,
   windowStartTimes,
@@ -132,14 +129,7 @@ export async function computeStepMetrics({
       ? Math.max(0, Math.round(windowEndMs - windowStartMs))
       : 0;
 
-  const cdpSlice = snapshotFromCdp(
-    cdpReq,
-    stepIndex,
-    mode,
-    baselineStepIndex,
-    windowStartTimes,
-    windowEndTimes
-  );
+  const cdpSlice = snapshotFromCdp(cdpReq, stepIndex, windowStartTimes, windowEndTimes);
   const compressedBytes = cdpSlice.reduce((acc, r) => acc + (r.encodedBytes || 0), 0);
   const requestCount = cdpSlice.length;
 
