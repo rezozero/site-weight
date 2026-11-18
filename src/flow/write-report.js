@@ -73,6 +73,7 @@ export function writeReport({ report, outDir, runId, requestDetails }) {
         "",
         "",
         "",
+        "",
       ].join(",")
     );
   }
