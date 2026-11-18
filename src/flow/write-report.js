@@ -6,11 +6,15 @@ function roundKb(kb) {
   return Math.round(kb * 10) / 10;
 }
 
+function csvText(value) {
+  return `"${String(value ?? "").replace(/"/g, '""')}"`;
+}
+
 // Each result holds the decompressed size of its own step. The reports show it
 // as the step size ("delta") and as a running total over the journey.
 export function writeReport({ report, outDir, runId, requestDetails }) {
   const technicalCsvLines = [
-    "step_index,step_name,page_url,dom_nodes,mode,decompressed_kb,decompressed_kb_delta,compressed_kb,request_count,window_duration_ms,ecoindex_score,ecoindex_grade,perf_decoded_coverage_pct,decompressed_method,compressed_method,scroll_to_end,link_match,navigation_fallback,action",
+    "step_index,step_name,page_url,dom_nodes,mode,decompressed_kb,decompressed_kb_delta,compressed_kb,request_count,window_duration_ms,ecoindex_score,ecoindex_grade,perf_decoded_coverage_pct,decompressed_method,compressed_method,scroll_to_end,link_match,navigation_fallback,action,error",
   ];
 
   let cumulativeDecompressed = 0;
@@ -20,6 +24,13 @@ export function writeReport({ report, outDir, runId, requestDetails }) {
   let sumCompressed = 0;
 
   for (const r of report.results) {
+    // A step that timed out has no measurement: only its name and error.
+    if (r.timedOut) {
+      technicalCsvLines.push(
+        [r.stepIndex, csvText(r.name), csvText(r.page_url), ...Array(16).fill(""), csvText(r.error)].join(",")
+      );
+      continue;
+    }
     const decompressedDelta = r.step_decompressed_kb;
     cumulativeDecompressed = roundKb(cumulativeDecompressed + decompressedDelta);
     sumDecompressed += cumulativeDecompressed;
@@ -48,6 +59,7 @@ export function writeReport({ report, outDir, runId, requestDetails }) {
         r.notes.linkMatch || "",
         r.notes.navigationFallback || "",
         r.notes.action || "",
+        csvText(r.error),
       ].join(",")
     );
   }
@@ -74,6 +86,7 @@ export function writeReport({ report, outDir, runId, requestDetails }) {
         "",
         "",
         "",
+        "",
       ].join(",")
     );
   }
@@ -82,7 +95,7 @@ export function writeReport({ report, outDir, runId, requestDetails }) {
   fs.writeFileSync(technicalCsvPath, technicalCsvLines.join("\n"), "utf-8");
 
   const humanCsvLines = [
-    "index,name,url,taille (decompressé kB),taille (compressé kB),taille cumulative (decompressé kB),nombre de requete,dom_nodes,ecoindex,note",
+    "index,name,url,taille (decompressé kB),taille (compressé kB),taille cumulative (decompressé kB),nombre de requete,dom_nodes,ecoindex,note,erreur",
   ];
 
   let humanCumulative = 0;
@@ -91,6 +104,12 @@ export function writeReport({ report, outDir, runId, requestDetails }) {
   let humanCount = 0;
 
   for (const r of report.results) {
+    if (r.timedOut) {
+      humanCsvLines.push(
+        [r.stepIndex, csvText(r.name), csvText(r.page_url), ...Array(7).fill(""), csvText(r.error)].join(",")
+      );
+      continue;
+    }
     const decompressedDelta = r.step_decompressed_kb;
     humanCumulative = roundKb(humanCumulative + decompressedDelta);
     sumHumanDelta += decompressedDelta;
@@ -109,6 +128,7 @@ export function writeReport({ report, outDir, runId, requestDetails }) {
         r.dom_nodes,
         r.ecoindex_score,
         r.ecoindex_grade || "",
+        csvText(r.error),
       ].join(",")
     );
   }
@@ -121,6 +141,7 @@ export function writeReport({ report, outDir, runId, requestDetails }) {
         "",
         (sumHumanDelta / humanCount).toFixed(1),
         (sumHumanCompressed / humanCount).toFixed(1),
+        "",
         "",
         "",
         "",

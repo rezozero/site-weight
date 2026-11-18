@@ -29,17 +29,36 @@ function createModeAccumulator(mode) {
   };
 }
 
+const DEFAULT_STEP_TIMEOUT_MS = 120000;
+
+class StepTimeoutError extends Error {}
+
+// Rejects when `promise` takes longer than `ms`. The late promise keeps
+// running until the browser closes; Promise.race keeps its rejection handled.
+function withTimeout(promise, ms, message) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new StepTimeoutError(message)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
 export async function runJourney({ cfg, cfgPath }) {
+  const stepTimeoutMs = Number(cfg.stepTimeoutMs ?? DEFAULT_STEP_TIMEOUT_MS);
+  if (!Number.isFinite(stepTimeoutMs) || stepTimeoutMs <= 0) {
+    throw new Error("Invalid config: stepTimeoutMs must be a positive number of milliseconds.");
+  }
+
   const browser = await chromium.launch({ headless: true });
   try {
-    return await runJourneyInBrowser({ cfg, cfgPath, browser });
+    return await runJourneyInBrowser({ cfg, cfgPath, browser, stepTimeoutMs });
   } finally {
     // Also on failure: a leftover headless Chromium keeps running otherwise.
     await browser.close();
   }
 }
 
-async function runJourneyInBrowser({ cfg, cfgPath, browser }) {
+async function runJourneyInBrowser({ cfg, cfgPath, browser, stepTimeoutMs }) {
   const runId = `${(cfg.name || "journey").slice(0, 40)}__${nowIsoSafe()}`.replace(/\s+/g, "_");
   const outDir = path.join(path.dirname(cfgPath), `reports-${nowIsoSafe()}`);
   fs.mkdirSync(outDir, { recursive: true });
@@ -52,6 +71,7 @@ async function runJourneyInBrowser({ cfg, cfgPath, browser }) {
   await client.send("Network.enable");
 
   let currentStepIndex = 0;
+  let journeyStopped = false;
   const windowStartTimes = new Map();
   const windowEndTimes = new Map();
   const { cdpReq, decompressedFallbackByRequestId } = createCdpTracker(client, () => currentStepIndex);
@@ -167,6 +187,7 @@ async function runJourneyInBrowser({ cfg, cfgPath, browser }) {
 
     const actions = Array.isArray(step.actions) && step.actions.length > 0 ? step.actions : [step];
     const actionNames = [];
+    const actionErrors = [];
     const linkMatches = [];
     const navigationFallbacks = [];
     let navigationTarget = "";
@@ -180,9 +201,15 @@ async function runJourneyInBrowser({ cfg, cfgPath, browser }) {
         if (result.navigationFallback) navigationFallbacks.push(result.navigationFallback);
         if (result.navigationTarget) navigationTarget = result.navigationTarget;
       } catch (err) {
-        warnProgress(`Action failed: ${actionItem.action || "unknown"} (${err?.message || err})`);
+        // A timed-out step keeps running until the browser closes: stay quiet.
+        if (journeyStopped) return;
+        const actionError = `${actionItem.action || "unknown"}: ${err?.message || err}`;
+        actionErrors.push(actionError.split("\n")[0]);
+        warnProgress(`Action failed: ${actionError}`);
       }
     }
+
+    step.error = actionErrors.join(" | ");
 
     step.actionTaken = actionNames.join(">") || "";
     step.linkMatch = linkMatches.join(">") || "";
@@ -239,11 +266,17 @@ async function runJourneyInBrowser({ cfg, cfgPath, browser }) {
 
   logProgress(`Start at ${cfg.startUrl}`);
   const startActionMs = Date.now();
-  await page.goto(cfg.startUrl, { waitUntil: "domcontentloaded" });
-  await settle(page, cfg);
-  await sleep(1000);
-  await autoScrollIfEnabled(page, cfg);
-  await settle(page, cfg);
+  await withTimeout(
+    (async () => {
+      await page.goto(cfg.startUrl, { waitUntil: "domcontentloaded" });
+      await settle(page, cfg);
+      await sleep(1000);
+      await autoScrollIfEnabled(page, cfg);
+      await settle(page, cfg);
+    })(),
+    stepTimeoutMs,
+    `Step 0 timed out after ${stepTimeoutMs} ms (${cfg.startUrl})`
+  );
   windowStartTimes.set(0, startActionMs);
   windowEndTimes.set(0, Date.now());
   const startPageUrl = page.url();
@@ -298,23 +331,48 @@ async function runJourneyInBrowser({ cfg, cfgPath, browser }) {
     dom_nodes: startDomNodes,
     ecoindex_score: startEcoindex.score,
     ecoindex_grade: startEcoindex.grade,
+    error: "",
     ...startMetrics,
   });
   logProgress("Step 0 completed");
 
   const steps = cfg.steps || [];
+  let incomplete = false;
   for (let i = 1; i < steps.length; i++) {
-    await doStep(steps[i], i);
-    const metrics = applyMode(await computeStepMetrics({
-      cfg,
-      step: steps[i],
-      stepIndex: i,
-      cdpReq,
-      decompressedFallbackByRequestId,
-      windowStartTimes,
-      windowEndTimes,
-      page,
-    }));
+    let metrics;
+    try {
+      metrics = await withTimeout(
+        (async () => {
+          await doStep(steps[i], i);
+          return applyMode(await computeStepMetrics({
+            cfg,
+            step: steps[i],
+            stepIndex: i,
+            cdpReq,
+            decompressedFallbackByRequestId,
+            windowStartTimes,
+            windowEndTimes,
+            page,
+          }));
+        })(),
+        stepTimeoutMs,
+        `Step ${i} timed out after ${stepTimeoutMs} ms`
+      );
+    } catch (err) {
+      if (!(err instanceof StepTimeoutError)) throw err;
+      // The page state is unknown: stop here and report the steps measured so far.
+      warnProgress(`${err.message}. Remaining steps are skipped.`);
+      results.push({
+        stepIndex: i,
+        name: steps[i].name || `Step ${i}`,
+        page_url: page.url(),
+        timedOut: true,
+        error: err.message,
+      });
+      incomplete = true;
+      journeyStopped = true;
+      break;
+    }
     const ecoindex = computeEcoindex({
       domNodes: steps[i].domNodes || 0,
       sizeKb: metrics.compressed_kb,
@@ -326,6 +384,7 @@ async function runJourneyInBrowser({ cfg, cfgPath, browser }) {
       dom_nodes: steps[i].domNodes || 0,
       ecoindex_score: ecoindex.score,
       ecoindex_grade: ecoindex.grade,
+      error: steps[i].error || "",
       ...metrics,
     });
     const action = metrics?.notes?.action || "";
@@ -337,7 +396,7 @@ async function runJourneyInBrowser({ cfg, cfgPath, browser }) {
     logProgress(`Step ${i} completed${actionSuffix}${targetSuffix}${matchSuffix}`);
   }
 
-  logProgress(`Journey completed (${results.length} steps)`);
+  logProgress(`Journey ${incomplete ? "stopped" : "completed"} (${results.length} steps)`);
 
   const requestDetails = {
     runId,
@@ -391,6 +450,7 @@ async function runJourneyInBrowser({ cfg, cfgPath, browser }) {
       window_start_ms: windowStartMs,
       window_end_ms: windowEndMs,
       window_duration_ms: windowDurationMs,
+      error: result.error || "",
       requests,
     });
   }
@@ -400,5 +460,6 @@ async function runJourneyInBrowser({ cfg, cfgPath, browser }) {
     outDir,
     runId,
     requestDetails,
+    incomplete,
   };
 }

@@ -104,6 +104,20 @@ export default {
 
 Any other value is rejected. The decompressed size is reported both ways in every mode: per step and as a running total.
 
+### Failed steps and timeout
+
+When an action fails (selector not found, click refused…), the journey goes on and the step reports the failure in the last column of both CSV files (`error`, `erreur`) and in `requests_<runId>.json`.
+
+`stepTimeoutMs` (default `120000`) bounds each step, from its first action to the end of its measurement. When a step goes over it, the journey stops: the reports contain the steps measured so far plus the timed-out step (name, URL and error only), and the CLI exits with code 1.
+
+```js
+export default {
+  startUrl: "https://www.example.com/",
+  stepTimeoutMs: 60000,
+  steps: [/* ... */],
+};
+```
+
 ### Simple urls example
 
 `urls` can contain absolute or relative URLs. When `urls` is used, the script tries to click a link whose `href` matches the target URL (absolute match first, then relative, with a trailing slash tolerance). If no link is found, it falls back to `window.location.href` and logs a warning. In this mode, `startUrl` is ignored and each URL becomes a step named after the URL. Relative URLs require `startUrl` to be set.
