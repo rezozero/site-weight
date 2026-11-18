@@ -16,11 +16,20 @@ import {
 } from "./collect-metrics.js";
 
 export async function runJourney({ cfg, cfgPath }) {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    return await runJourneyInBrowser({ cfg, cfgPath, browser });
+  } finally {
+    // Also on failure: a leftover headless Chromium keeps running otherwise.
+    await browser.close();
+  }
+}
+
+async function runJourneyInBrowser({ cfg, cfgPath, browser }) {
   const runId = `${(cfg.name || "journey").slice(0, 40)}__${nowIsoSafe()}`.replace(/\s+/g, "_");
   const outDir = path.join(path.dirname(cfgPath), `reports-${nowIsoSafe()}`);
   fs.mkdirSync(outDir, { recursive: true });
 
-  const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({ viewport: { width: 1366, height: 768 } });
   const page = await context.newPage();
 
@@ -372,8 +381,6 @@ export async function runJourney({ cfg, cfgPath }) {
       requests,
     });
   }
-
-  await browser.close();
 
   return {
     report,
