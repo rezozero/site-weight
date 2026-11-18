@@ -8,6 +8,8 @@ All notable changes to site-weight will be documented in this file.
 
 - Measure and score pages like EcoIndex_python ([#12](https://github.com/rezozero/site-weight/issues/12))
 - Write each run to reports/<date>_<journey>/ ([#10](https://github.com/rezozero/site-weight/issues/10))
+- Require Node.js 22 or later (1.0.0 accepted 18.12)
+- Remove the `main` entry point and `src/index.js`: the package is a CLI only
 
 ### Bug Fixes
 
@@ -37,7 +39,7 @@ All notable changes to site-weight will be documented in this file.
 
 - cover invalid configs, failed actions and step timeouts in the smoke run - ([3384ea3](https://github.com/rezozero/site-weight/commit/3384ea3de03cfe63edc8171781075d88eb752e8b))
 
-## [1.0.0] - 2026-02-23 (+ Node ≥22 / suppression de main dans les breaking changes)
+## [1.0.0] - 2026-02-23
 
 ### Features
 
