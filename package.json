@@ -14,13 +14,14 @@
     "journey": "node src/cli.js ./journey.sample.js"
   },
   "keywords": [],
-  "author": "",
+  "author": "Rezo Zero",
   "license": "MIT",
   "type": "module",
   "engines": {
-    "node": ">=18.12"
+    "node": ">=20"
   },
   "dependencies": {
     "playwright": "^1.58.2"
-  }
+  },
+  "packageManager": "pnpm@12.11.2"
 }

@@ -5,15 +5,27 @@ This project measures the network weight of a real user journey on modern SPA + 
 Goals:
 - Reproduce a realistic user journey with configurable actions (clicks, waits, multi-action steps).
 - Measure request count and transfer sizes per step within a controlled time window.
-- Provide two CSV outputs: a human-friendly summary and a technical report, plus a JSON + schema for analysis.
+- Provide two CSV outputs, a human-friendly summary and a technical report, plus a JSON file with per-request details.
 - Stay compatible with SPA navigation (URL changes, late async calls, prefetch behavior).
 
 This repo contains a small Playwright-based CLI that measures network weight for a user journey. It executes a journey described in a `journey.js` file you provide.
 
 ## Install
 
+Node 20 or later. To use the CLI in a project:
+
 ```bash
-npm install
+npx site-weight ./journey.js
+```
+
+Playwright needs a Chromium build the first time: `npx playwright install chromium`.
+
+To work on this repository, use pnpm:
+
+```bash
+pnpm install
+pnpm exec playwright install chromium
+pnpm journey   # runs journey.sample.js
 ```
 
 ## Usage
@@ -53,16 +65,16 @@ export default {
   },
   steps: [
     {
-      name: "Accueil SSR",
+      name: "Home (SSR)",
       action: "noop",
     },
     {
-      name: "Aller a la programmation",
+      name: "Go to the programme",
       action: "click",
       selector: "a[href*='programmation'], a[href*='spectacles']",
     },
     {
-      name: "Ouvrir une fiche spectacle",
+      name: "Open a show page",
       action: "click",
       selector: "main a[href*='spectacle'], main a[href*='spectacles']",
     },
@@ -94,7 +106,7 @@ export default {
   startUrl: "https://www.example.com/",
   steps: [
     {
-      name: "Aller a la programmation",
+      name: "Go to the programme",
       actions: [
         {
           action: "click",
@@ -112,7 +124,9 @@ export default {
 
 ## Output
 
-Reports are written to a timestamped folder inside the `journey.js` directory: `/<journey-folder>/reports-<timestamp>/`. Filenames include a run id derived from the journey name and timestamp. `request_count` is computed within a step window (start to end), and `window_duration_ms` reports that window length. Each row also includes `page_url`, the current page URL after the step finishes. Two CSV files are produced: `<runId>.csv` (human-friendly) and `technical_<runId>.csv` (full technical report).
+Reports are written to a timestamped folder inside the `journey.js` directory: `/<journey-folder>/reports-<timestamp>/`. Filenames include a run id derived from the journey name and timestamp. `request_count` is computed within a step window (start to end), and `window_duration_ms` reports that window length. Each row also includes `page_url`, the current page URL after the step finishes. Three files are produced: `<runId>.csv` (human-friendly), `technical_<runId>.csv` (full technical report) and `requests_<runId>.json` (every request observed, per step).
+
+[METHODOLOGY.md](METHODOLOGY.md) explains, for non-developers, what the numbers mean and their limits.
 
 ## EcoIndex sources
 
@@ -128,3 +142,15 @@ Official references:
 - EcoIndex: https://www.ecoindex.fr/
 - GreenIT-Analysis: https://github.com/cnumr/GreenIT-Analysis
 - GreenIT DOM count method: https://raw.githubusercontent.com/cnumr/GreenIT-Analysis/master/script/analyseFrame.js
+
+## Contributing
+
+Pull requests are welcome. The repository follows [git flow](https://danielkummer.github.io/git-flow-cheatsheet/):
+
+- branch from `develop` and open the pull request against `develop`;
+- write commit messages and the PR title as [Conventional Commits](https://www.conventionalcommits.org/), in English: PRs are squash-merged, and [git-cliff](https://git-cliff.org/) builds `CHANGELOG.md` from those titles;
+- keep one logical change per pull request.
+
+## License
+
+[MIT](LICENSE) © Rezo Zero
