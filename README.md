@@ -55,7 +55,7 @@ Export a default object. Use `steps` for detailed journeys. If `steps` is empty 
 
 With `steps`, `startUrl` is required and must be an absolute `http(s)` URL. The first step measures the landing on `startUrl`: its `action` or `actions` are not run (a warning says so), so keep it as `noop`.
 
-`journey.js` is always loaded as an ES module, whatever the `type` field of your `package.json` says. A CommonJS `module.exports = { ... }` also works.
+`journey.js` is always loaded as an ES module, whatever the `type` field of your `package.json` says. A CommonJS `module.exports = { ... }` also works. The local `.js` files it imports follow the same rule: ES module syntax loads as an ES module, anything else as CommonJS.
 
 ### Full steps example
 
