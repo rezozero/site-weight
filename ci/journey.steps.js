@@ -9,7 +9,7 @@ export default {
     enabled: true,
     stepPx: 800,
     pauseMs: 50,
-    maxMs: 3000,
+    maxMs: 10000,
   },
   steps: [
     {
@@ -20,6 +20,12 @@ export default {
       name: "Page 2",
       action: "click",
       selector: "nav a[href='/page-2/']",
+    },
+    {
+      // Stays on the same URL: part of the "Page 2" page view.
+      name: "Read page 2",
+      action: "waitForSelector",
+      selector: "main p",
     },
     {
       name: "Back home",

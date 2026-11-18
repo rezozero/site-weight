@@ -1,4 +1,5 @@
-export const DEFAULT_VIEWPORT = { width: 1366, height: 768 };
+// The window size EcoIndex measures its pages with.
+export const DEFAULT_VIEWPORT = { width: 1920, height: 1080 };
 
 function isPixelSize(value) {
   return Number.isInteger(value) && value > 0;

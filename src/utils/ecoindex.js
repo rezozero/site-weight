@@ -89,13 +89,24 @@ function getQuantile(quantiles, value) {
   return quantiles.length - 1;
 }
 
+// Python's round(): a half goes to the even integer. EcoIndex_python rounds
+// the score with it, then grades the rounded score.
+function roundHalfEven(value) {
+  const floor = Math.floor(value);
+  const diff = value - floor;
+  if (diff > 0.5) return floor + 1;
+  if (diff < 0.5) return floor;
+  return floor % 2 === 0 ? floor : floor + 1;
+}
+
+// Same quantiles, weights, rounding and grade thresholds as EcoIndex_python
+// (components/ecoindex/compute/ecoindex.py). `sizeKb` is in kB of 1000 bytes.
 export function computeEcoindex({ domNodes, sizeKb, requests }) {
   const qDom = getQuantile(QUANTILES_DOM, domNodes);
   const qReq = getQuantile(QUANTILES_REQ, requests);
   const qSize = getQuantile(QUANTILES_SIZE, sizeKb);
 
-  const scoreRaw = 100 - (5 * (3 * qDom + 2 * qReq + qSize)) / 6;
-  const score = Math.round(scoreRaw * 10) / 10;
+  const score = roundHalfEven(100 - (5 * (3 * qDom + 2 * qReq + qSize)) / 6);
 
   let grade = "G";
   for (const threshold of GRADE_THRESHOLDS) {
@@ -108,24 +119,56 @@ export function computeEcoindex({ domNodes, sizeKb, requests }) {
   return { score, grade };
 }
 
+function withoutHash(url) {
+  const hashIndex = url.indexOf("#");
+  return hashIndex === -1 ? url : url.slice(0, hashIndex);
+}
+
+// Groups the measured steps into page views. A page view starts on the first
+// step and on every step that ends on another URL (hash aside). A step that
+// stays on the same URL (menu, tab, in-page filter) adds its requests and its
+// transferred size to the current page view, which keeps the largest DOM it
+// reached. Uses the values of each step on its own, whatever the mode.
+// A failed step (or one that timed out) is left out.
+export function groupPageViews(results) {
+  const pageViews = [];
+  for (const r of results) {
+    if (r.timedOut || r.error) continue;
+    const url = withoutHash(r.page_url || "");
+    const current = pageViews.at(-1);
+    if (current && current.url === url) {
+      current.compressedKb += r.step_compressed_kb;
+      current.requests += r.step_request_count;
+      current.domNodes = Math.max(current.domNodes, r.dom_nodes);
+    } else {
+      pageViews.push({
+        url,
+        compressedKb: r.step_compressed_kb,
+        requests: r.step_request_count,
+        domNodes: r.dom_nodes,
+      });
+    }
+  }
+  return pageViews;
+}
+
 // EcoIndex of the journey's average page view: the transferred size, request
-// count and DOM size of each step, averaged over the steps, whatever the mode.
-// The cache and client-side navigation lower the cost of the later pages, so
-// a longer journey through the site scores better than its landing page.
-// A failed step (or one that timed out) is no page view: it is left out.
+// count and DOM size of each page view, averaged over the page views. The
+// first page view is a first visit, from an empty cache; the following ones
+// reuse what the browser already has, as in a real visit.
 export function computeJourneyEcoindex(results) {
-  const pages = results.filter((r) => !r.timedOut && !r.error);
-  if (pages.length === 0) {
+  const pageViews = groupPageViews(results);
+  if (pageViews.length === 0) {
     return null;
   }
 
-  const mean = (key) => pages.reduce((sum, r) => sum + r[key], 0) / pages.length;
+  const mean = (key) => pageViews.reduce((sum, view) => sum + view[key], 0) / pageViews.length;
   const averages = {
-    pageCount: pages.length,
-    leftOutCount: results.length - pages.length,
-    compressedKb: mean("step_compressed_kb"),
-    requests: mean("step_request_count"),
-    domNodes: mean("dom_nodes"),
+    pageCount: pageViews.length,
+    leftOutCount: results.filter((r) => r.timedOut || r.error).length,
+    compressedKb: mean("compressedKb"),
+    requests: mean("requests"),
+    domNodes: mean("domNodes"),
   };
   return {
     ...averages,

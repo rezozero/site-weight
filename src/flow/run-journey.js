@@ -211,6 +211,9 @@ async function runJourneyInBrowser({ cfg, browser, stepTimeoutMs, outRoot, viewp
   async function measureStep({ step, stepIndex, name, windowStartMs }) {
     windowStartTimes.set(stepIndex, windowStartMs);
     windowEndTimes.set(stepIndex, Date.now());
+    // From now on, a new request belongs to the next step: none goes uncounted
+    // between two steps.
+    currentStepIndex = stepIndex + 1;
     const pageUrl = page.url();
     const domNodes = await countDomNodes(page);
     const metrics = applyMode(await computeStepMetrics({
@@ -384,7 +387,6 @@ async function runJourneyInBrowser({ cfg, browser, stepTimeoutMs, outRoot, viewp
     const requests = [];
     for (const rec of cdpReq.values()) {
       if (rec.stepIndex !== result.stepIndex) continue;
-      if (typeof windowStartMs === "number" && rec.requestStartMs < windowStartMs) continue;
       if (typeof windowEndMs === "number" && rec.requestStartMs > windowEndMs) continue;
 
       requests.push({

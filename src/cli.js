@@ -12,7 +12,7 @@ const USAGE = `Usage: site-weight <journey.js|folder> [options]
 
 Options:
   --out <dir>        Folder that receives one sub-folder per run (default: <journey folder>/reports)
-  --viewport <WxH>   Browser viewport, e.g. 1920x1080 (default: the journey "viewport", else 1366x768)
+  --viewport <WxH>   Browser viewport, e.g. 1920x1080 (default: the journey "viewport", else 1920x1080)
   --headed           Show the browser window instead of running headless
   -h, --help         Show this help`;
 
@@ -88,8 +88,8 @@ async function main() {
   if (journey) {
     const leftOut = journey.leftOutCount > 0 ? `, ${journey.leftOutCount} failed step(s) left out` : "";
     console.log(
-      `Journey EcoIndex: ${journey.score} (${journey.grade}) over ${journey.pageCount} page(s)${leftOut}` +
-        ` - per page: ${journey.compressedKb.toFixed(1)} kB, ${journey.requests.toFixed(1)} requests,` +
+      `Journey EcoIndex: ${journey.score} (${journey.grade}) over ${journey.pageCount} page view(s)${leftOut}` +
+        ` - per page view: ${journey.compressedKb.toFixed(1)} kB, ${journey.requests.toFixed(1)} requests,` +
         ` ${journey.domNodes.toFixed(1)} DOM nodes`
     );
   } else {

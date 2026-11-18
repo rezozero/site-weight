@@ -12,6 +12,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
+import { computeEcoindex, computeJourneyEcoindex } from "../src/utils/ecoindex.js";
 import { createRunFolder } from "../src/utils/run-folder.js";
 
 const CI_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -38,7 +39,8 @@ const JOURNEYS = [
     cliArgs: ["--viewport", "1920x1080"],
     useOutOption: true,
     cumulative: false,
-    expectedPaths: ["/", "/page-2/", "/"],
+    // The third step stays on page 2: three page views over four steps.
+    expectedPaths: ["/", "/page-2/", "/page-2/", "/"],
     expectedViewport: { width: 1920, height: 1080 },
   },
   {
@@ -49,13 +51,19 @@ const JOURNEYS = [
     // mode: "cumulative": each step counts the requests since the start.
     cumulative: true,
     expectedPaths: ["/", "/page-2/"],
-    // Set by the journey's own "viewport" key.
+    // Set by the journey's own "viewport" key. No "scroll" key: scrolls by default.
     expectedViewport: { width: 1024, height: 768 },
   },
 ];
 
 const HUMAN_COLUMNS = 11;
 const TECHNICAL_COLUMNS = 20;
+
+// EcoIndex DOM count of ci/site/index.html: its elements plus the two of the
+// open shadow root, minus the three descendants of the inline <svg>.
+const HOME_DOM_NODES = 20;
+// Lazy-loaded image at the bottom of the home page, loaded by the scroll.
+const LAZY_IMAGE_QUERY = "?below-the-fold";
 
 // Async on purpose: a synchronous spawn would block the site server running in
 // this same process.
@@ -164,46 +172,68 @@ function checkReports(journey, reportsRoot, baseUrl, label) {
 
   let previousRequests = 0;
   journey.expectedPaths.forEach((expectedPath, i) => {
-    const [index, , url, stepKb, compressedKb, , requests, domNodes] = human[i + 1];
+    const [index, , url, stepKb, compressedKb, , requests, domNodes, score] = human[i + 1];
     const stepLabel = `${label} step ${index}`;
     const error = human[i + 1][HUMAN_COLUMNS - 1];
     check(error === "", `${stepLabel}: unexpected error "${error}"`);
     check(url === new URL(expectedPath, baseUrl).toString(), `${stepLabel}: page url ${url}, expected ${expectedPath}`);
     check(Number(stepKb) >= 0 && Number(compressedKb) >= 0, `${stepLabel}: negative size (${stepKb} / ${compressedKb})`);
     check(Number(domNodes) > 0, `${stepLabel}: no DOM nodes counted`);
+    if (expectedPath === "/") {
+      check(Number(domNodes) === HOME_DOM_NODES, `${stepLabel}: ${domNodes} DOM nodes, expected ${HOME_DOM_NODES}`);
+    }
+    // EcoIndex scores are whole numbers.
+    check(/^\d+$/.test(score), `${stepLabel}: EcoIndex "${score}" is not a whole number`);
     if (i === 0) {
-      check(Number(requests) >= 3, `${stepLabel}: ${requests} requests, expected the page, its CSS and its image`);
+      check(Number(requests) >= 4, `${stepLabel}: ${requests} requests, expected the page, its CSS and its two images`);
     } else if (journey.cumulative) {
       check(Number(requests) > previousRequests, `${stepLabel}: cumulative request count did not grow (${requests})`);
     }
     previousRequests = Number(requests);
   });
 
-  // The average row holds the journey EcoIndex, computed from the per-page
-  // averages of the step values: in cumulative mode, the last running total
-  // over the step count.
+  // The average row holds the journey EcoIndex and the per page view averages
+  // it is computed from. Consecutive steps on the same URL make one page view:
+  // their requests and sizes add up, the page view keeps the largest DOM.
   const stepRows = human.slice(1, -1);
+  const pageViews = [];
+  stepRows.forEach((row, i) => {
+    // In cumulative mode, a step's own values are the growth of the totals.
+    const ownValue = (column) => Number(row[column]) - (journey.cumulative && i > 0 ? Number(stepRows[i - 1][column]) : 0);
+    const view = { url: row[2], kb: ownValue(4), requests: ownValue(6), dom: Number(row[7]) };
+    const current = pageViews.at(-1);
+    if (current && current.url === view.url) {
+      current.kb += view.kb;
+      current.requests += view.requests;
+      current.dom = Math.max(current.dom, view.dom);
+    } else {
+      pageViews.push(view);
+    }
+  });
+  const pageViewAverage = (key) => pageViews.reduce((sum, view) => sum + view[key], 0) / pageViews.length;
   const averageRow = human.at(-1);
-  const [, , , , , , averageRequests, averageDomNodes, journeyScore, journeyGrade] = averageRow;
-  const requestTotal = journey.cumulative
-    ? Number(stepRows.at(-1)[6])
-    : stepRows.reduce((sum, row) => sum + Number(row[6]), 0);
-  const domTotal = stepRows.reduce((sum, row) => sum + Number(row[7]), 0);
+  const [, , , , averageCompressed, , averageRequests, averageDomNodes, journeyScore, journeyGrade] = averageRow;
   check(
-    averageRequests === (requestTotal / stepCount).toFixed(1),
-    `${label}: average requests per page ${averageRequests}, expected ${(requestTotal / stepCount).toFixed(1)}`
+    averageRequests === pageViewAverage("requests").toFixed(1),
+    `${label}: average requests per page view ${averageRequests}, expected ${pageViewAverage("requests").toFixed(1)}`
   );
   check(
-    averageDomNodes === (domTotal / stepCount).toFixed(1),
-    `${label}: average DOM nodes ${averageDomNodes}, expected ${(domTotal / stepCount).toFixed(1)}`
+    averageDomNodes === pageViewAverage("dom").toFixed(1),
+    `${label}: average DOM nodes ${averageDomNodes}, expected ${pageViewAverage("dom").toFixed(1)}`
+  );
+  // The step sizes are rounded to 0.1 kB, so their sum can be off by a little.
+  check(
+    Math.abs(Number(averageCompressed) - pageViewAverage("kb")) <= 0.1,
+    `${label}: average kB per page view ${averageCompressed}, expected about ${pageViewAverage("kb").toFixed(1)}`
   );
   check(
-    Number(journeyScore) > 0 && Number(journeyScore) <= 100 && /^[A-G]$/.test(journeyGrade),
+    /^\d+$/.test(journeyScore) && Number(journeyScore) <= 100 && /^[A-G]$/.test(journeyGrade),
     `${label}: journey EcoIndex "${journeyScore}" / "${journeyGrade}" in the average row`
   );
   const technicalAverage = technical.at(-1);
   check(
     technicalAverage[3] === averageDomNodes &&
+      technicalAverage[7] === averageCompressed &&
       technicalAverage[8] === averageRequests &&
       technicalAverage[10] === journeyScore &&
       technicalAverage[11] === journeyGrade,
@@ -218,7 +248,38 @@ function checkReports(journey, reportsRoot, baseUrl, label) {
     width === expected.width && height === expected.height,
     `${label}: viewport ${width}x${height}, expected ${expected.width}x${expected.height}`
   );
+  check(
+    details.steps[0].requests.some((request) => request.url.endsWith(LAZY_IMAGE_QUERY)),
+    `${label}: the lazy image at the bottom of the home page was not loaded by the scroll`
+  );
   return reportDir;
+}
+
+// The EcoIndex formula and the journey score, on fixed values.
+function checkEcoindexComputation() {
+  const label = "EcoIndex computation";
+  try {
+    // Raw score 80.25: EcoIndex rounds it to 80 before grading it, so B, not A.
+    const boundary = computeEcoindex({ domNodes: 470, sizeKb: 0, requests: 0 });
+    check(boundary.score === 80 && boundary.grade === "B", `${label}: ${JSON.stringify(boundary)}, expected 80 (B)`);
+
+    // Same URL (hash aside): one page view; the failed step is left out.
+    const journey = computeJourneyEcoindex([
+      { page_url: "https://example.com/a", step_compressed_kb: 100, step_request_count: 10, dom_nodes: 500, error: "" },
+      { page_url: "https://example.com/a#menu", step_compressed_kb: 20, step_request_count: 2, dom_nodes: 600, error: "" },
+      { page_url: "https://example.com/b", step_compressed_kb: 50, step_request_count: 5, dom_nodes: 300, error: "" },
+      { page_url: "https://example.com/c", step_compressed_kb: 900, step_request_count: 90, dom_nodes: 900, error: "click: failed" },
+    ]);
+    const expected = { pageCount: 2, leftOutCount: 1, compressedKb: 85, requests: 8.5, domNodes: 450 };
+    for (const [key, value] of Object.entries(expected)) {
+      check(journey[key] === value, `${label}: journey ${key} ${journey[key]}, expected ${value}`);
+    }
+    console.log(`ok ${label}`);
+    return true;
+  } catch (error) {
+    console.error(`FAIL ${error.message}`);
+    return false;
+  }
 }
 
 const TIMEOUT_STEP_MS = 5000;
@@ -287,6 +348,8 @@ const FAILURE_CASES = [
       startUrl: baseUrl,
       stepTimeoutMs: TIMEOUT_STEP_MS,
       settle: { extraMs: 100, pauseMs: 0 },
+      // Keeps the landing well under the step timeout.
+      scroll: { enabled: false },
       steps: [
         { name: "Home", action: "noop" },
         { name: "Page 2", action: "goto", url: new URL("/page-2/", baseUrl).toString() },
@@ -410,7 +473,7 @@ async function main() {
         failed = true;
       }
     }
-    if (!(await checkHelp()) || !checkRunFolderSuffix()) {
+    if (!(await checkHelp()) || !checkRunFolderSuffix() || !checkEcoindexComputation()) {
       failed = true;
     }
   } finally {

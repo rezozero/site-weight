@@ -11,7 +11,7 @@ export default {
     mode: "page",
     stepPx: 800,
     pauseMs: 250,
-    maxMs: 12000,
+    maxMs: 30000,
     backToTop: false,
   },
   steps: [
