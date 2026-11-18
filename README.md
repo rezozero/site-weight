@@ -49,6 +49,15 @@ npx @rezo-zero/site-weight ./journey.js
 npx @rezo-zero/site-weight ./example.com/
 ```
 
+| Option | Effect |
+| --- | --- |
+| `--out <dir>` | Writes `reports-<timestamp>/` into `<dir>` instead of the journey folder. |
+| `--viewport <WxH>` | Browser viewport, e.g. `1920x1080`. Overrides the journey's `viewport`. |
+| `--headed` | Shows the browser window, to watch or debug a journey. |
+| `-h`, `--help` | Prints the usage. |
+
+The default viewport is 1366×768. EcoIndex measures its own scores at 1920×1080: pass `--viewport 1920x1080` to compare with them.
+
 ## Journey Config (journey.js)
 
 Export a default object. Use `steps` for detailed journeys. If `steps` is empty or missing, the script uses `urls` instead.
@@ -56,6 +65,15 @@ Export a default object. Use `steps` for detailed journeys. If `steps` is empty 
 With `steps`, `startUrl` is required and must be an absolute `http(s)` URL. The first step measures the landing on `startUrl`: its `action` or `actions` are not run (a warning says so), so keep it as `noop`.
 
 `journey.js` is always loaded as an ES module, whatever the `type` field of your `package.json` says. A CommonJS `module.exports = { ... }` also works.
+
+Each step runs its action(s), then settles: a first settle pass, a pause, the scroll (when enabled), and a second settle pass. These keys tune it:
+
+| Key | Default | Effect |
+| --- | --- | --- |
+| `settle.waitUntil` | `"networkidle"` | Load state awaited by each settle pass; `"networkidle"` gives up after 5 s. |
+| `settle.extraMs` | `1000` | Fixed wait at the end of each settle pass. |
+| `settle.pauseMs` | `1000` | Pause between the two passes, for requests that start once the network is idle (hydration, lazy widgets). `0` skips it. |
+| `viewport` | `{ width: 1366, height: 768 }` | Browser viewport. `--viewport` overrides it. |
 
 ### Full steps example
 
@@ -160,7 +178,7 @@ export default {
 
 ## Output
 
-Reports are written to a timestamped folder inside the `journey.js` directory: `/<journey-folder>/reports-<timestamp>/`. Filenames include a run id derived from the journey name and timestamp. `request_count` is computed within a step window (start to end), and `window_duration_ms` reports that window length. Each row also includes `page_url`, the current page URL after the step finishes. Three files are produced: `<runId>.csv` (human-friendly), `technical_<runId>.csv` (full technical report) and `requests_<runId>.json` (every request observed, per step).
+Reports are written to a timestamped folder inside the `journey.js` directory, `/<journey-folder>/reports-<timestamp>/`, or inside the `--out` folder. Filenames include a run id derived from the journey name and timestamp. `request_count` is computed within a step window (start to end), and `window_duration_ms` reports that window length. Each row also includes `page_url`, the current page URL after the step finishes. Three files are produced: `<runId>.csv` (human-friendly), `technical_<runId>.csv` (full technical report) and `requests_<runId>.json` (every request observed, per step).
 
 [METHODOLOGY.md](METHODOLOGY.md) explains, for non-developers, what the numbers mean and their limits.
 
@@ -185,7 +203,8 @@ Pull requests are welcome. The repository follows [git flow](https://danielkumme
 
 - branch from `develop` and open the pull request against `develop`;
 - write commit messages and the PR title as [Conventional Commits](https://www.conventionalcommits.org/), in English: PRs are squash-merged, and [git-cliff](https://git-cliff.org/) builds `CHANGELOG.md` from those titles;
-- keep one logical change per pull request.
+- keep one logical change per pull request;
+- run `pnpm smoke` first: it serves a small local site from `ci/site/` and checks the reports of two journeys. CI runs it on Node 22, 24 and 26.
 
 ## License
 
