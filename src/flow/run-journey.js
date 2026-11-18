@@ -16,6 +16,19 @@ import {
   settle,
 } from "./collect-metrics.js";
 
+// In "cumulative" mode, the transferred size and the request count of a step
+// (and the EcoIndex computed from them) cover the journey from its start.
+function createModeAccumulator(mode) {
+  let compressedKb = 0;
+  let requestCount = 0;
+  return (metrics) => {
+    compressedKb = Math.round((compressedKb + metrics.compressed_kb) * 10) / 10;
+    requestCount += metrics.request_count;
+    if (mode !== "cumulative") return metrics;
+    return { ...metrics, compressed_kb: compressedKb, request_count: requestCount };
+  };
+}
+
 export async function runJourney({ cfg, cfgPath }) {
   const browser = await chromium.launch({ headless: true });
   try {
@@ -260,21 +273,20 @@ async function runJourneyInBrowser({ cfg, cfgPath, browser }) {
     return Math.max(0, getDomSizeWithoutSvg());
   });
 
-  const baselineStepIndex = 0;
   const results = [];
+  const applyMode = createModeAccumulator(cfg.mode || "per_step");
 
   currentStepIndex = 0;
-  const startMetrics = await computeStepMetrics({
+  const startMetrics = applyMode(await computeStepMetrics({
       cfg,
       step: cfg.steps?.[0],
       stepIndex: 0,
-      baselineStepIndex,
       cdpReq,
       decompressedFallbackByRequestId,
       windowStartTimes,
       windowEndTimes,
       page,
-    });
+    }));
   const startEcoindex = computeEcoindex({
     domNodes: startDomNodes,
     sizeKb: startMetrics.compressed_kb,
@@ -293,17 +305,16 @@ async function runJourneyInBrowser({ cfg, cfgPath, browser }) {
   const steps = cfg.steps || [];
   for (let i = 1; i < steps.length; i++) {
     await doStep(steps[i], i);
-    const metrics = await computeStepMetrics({
+    const metrics = applyMode(await computeStepMetrics({
       cfg,
       step: steps[i],
       stepIndex: i,
-      baselineStepIndex,
       cdpReq,
       decompressedFallbackByRequestId,
       windowStartTimes,
       windowEndTimes,
       page,
-    });
+    }));
     const ecoindex = computeEcoindex({
       domNodes: steps[i].domNodes || 0,
       sizeKb: metrics.compressed_kb,
