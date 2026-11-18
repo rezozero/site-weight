@@ -12,11 +12,20 @@ This repo contains a small Playwright-based CLI that measures network weight for
 
 ## Install
 
-Node 20 or later. To use the CLI in a project:
+Node 22 or later (any maintained LTS). Run it without installing:
 
 ```bash
+npx @rezo-zero/site-weight ./journey.js
+```
+
+Or add it to a project, which also exposes the shorter `site-weight` command:
+
+```bash
+npm install --save-dev @rezo-zero/site-weight
 npx site-weight ./journey.js
 ```
+
+Always use the scoped name `@rezo-zero/site-weight` when the package is not installed: `npx site-weight` alone would look for an unrelated, unscoped `site-weight` package on npm.
 
 Playwright needs a Chromium build the first time: `npx playwright install chromium`.
 
@@ -33,16 +42,18 @@ pnpm journey   # runs journey.sample.js
 Pass either a folder (the CLI will look for `journey.js` inside it) or a direct path to a `journey.js` file.
 
 ```bash
-npx site-weight ./journey.js
+npx @rezo-zero/site-weight ./journey.js
 ```
 
 ```bash
-npx site-weight ./example.com/
+npx @rezo-zero/site-weight ./example.com/
 ```
 
 ## Journey Config (journey.js)
 
 Export a default object. Use `steps` for detailed journeys. If `steps` is empty or missing, the script uses `urls` instead.
+
+`journey.js` is always loaded as an ES module, whatever the `type` field of your `package.json` says. A CommonJS `module.exports = { ... }` also works.
 
 ### Full steps example
 

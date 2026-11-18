@@ -2,7 +2,7 @@
 
 Node + Playwright CLI that replays a user journey (`journey.js`) and measures its network weight per step, with an estimated EcoIndex. Published on npm as `@rezo-zero/site-weight`; open source on GitHub.
 
-`src/cli.js` is the entry point (`bin`). Flow: `src/flow/load-config.js` → `run-journey.js` (browser + step loop) → `collect-metrics.js` → `write-report.js`. `src/index.js` is a leftover duplicate of `cli.js`: edit `cli.js`.
+`src/cli.js` is the only entry point (`bin`); the package has no programmatic API, hence no `main`. Flow: `src/flow/load-config.js` → `run-journey.js` (browser + step loop) → `collect-metrics.js` → `write-report.js`.
 
 ## Commands
 

@@ -6,19 +6,34 @@
     "type": "git",
     "url": "git+https://github.com/rezozero/site-weight.git"
   },
-  "main": "src/index.js",
   "bin": {
     "site-weight": "src/cli.js"
   },
+  "files": [
+    "src",
+    "journey.sample.js",
+    "METHODOLOGY.md"
+  ],
   "scripts": {
     "journey": "node src/cli.js ./journey.sample.js"
   },
-  "keywords": [],
+  "keywords": [
+    "ecoindex",
+    "greenit",
+    "eco-design",
+    "page-weight",
+    "network",
+    "user-journey",
+    "playwright",
+    "spa",
+    "ssr",
+    "cli"
+  ],
   "author": "Rezo Zero",
   "license": "MIT",
   "type": "module",
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "dependencies": {
     "playwright": "^1.58.2"

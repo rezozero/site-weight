@@ -1,8 +1,37 @@
 import fs from "node:fs";
+import { register } from "node:module";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { FORCE_ESM_PARAM } from "../utils/force-esm-hooks.js";
 import { isAbsoluteHttpUrl } from "../utils/url.js";
+
+const COMMONJS_GLOBAL_ERROR = /\b(module|exports|require) is not defined\b/;
+
+// journey.js is written as an ES module (`export default`), but Node reads a
+// `.js` file as CommonJS when the user's package.json has no "type": "module".
+// The hook forces the module format for this import only.
+async function importJourneyModule(cfgPath) {
+  register("../utils/force-esm-hooks.js", import.meta.url);
+
+  const esmUrl = pathToFileURL(cfgPath);
+  esmUrl.searchParams.set(FORCE_ESM_PARAM, "");
+  let esmModule;
+  try {
+    esmModule = await import(esmUrl.href);
+  } catch (error) {
+    if (!(error instanceof ReferenceError && COMMONJS_GLOBAL_ERROR.test(error.message))) {
+      throw error;
+    }
+  }
+  if (esmModule && "default" in esmModule) {
+    return esmModule;
+  }
+
+  // A CommonJS config (`module.exports = ...`) has no default export once read
+  // as ESM (or throws on `module`, depending on the Node version): load it the regular way.
+  return import(pathToFileURL(cfgPath).href);
+}
 
 function normalizeUrlEntry(url, startUrl) {
   if (typeof url !== "string" || !url.trim()) {
@@ -84,7 +113,7 @@ export async function loadConfig(inputArg) {
     throw new Error(`Missing journey config: ${cfgPath}`);
   }
 
-  const cfgModule = await import(pathToFileURL(cfgPath));
+  const cfgModule = await importJourneyModule(cfgPath);
   const cfg = normalizeConfig(cfgModule?.default);
   return { cfg, cfgPath };
 }
