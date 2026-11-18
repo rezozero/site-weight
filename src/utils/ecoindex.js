@@ -107,3 +107,28 @@ export function computeEcoindex({ domNodes, sizeKb, requests }) {
 
   return { score, grade };
 }
+
+// EcoIndex of the journey's average page view: the transferred size, request
+// count and DOM size of each step, averaged over the steps, whatever the mode.
+// The cache and client-side navigation lower the cost of the later pages, so
+// a longer journey through the site scores better than its landing page.
+// A failed step (or one that timed out) is no page view: it is left out.
+export function computeJourneyEcoindex(results) {
+  const pages = results.filter((r) => !r.timedOut && !r.error);
+  if (pages.length === 0) {
+    return null;
+  }
+
+  const mean = (key) => pages.reduce((sum, r) => sum + r[key], 0) / pages.length;
+  const averages = {
+    pageCount: pages.length,
+    leftOutCount: results.length - pages.length,
+    compressedKb: mean("step_compressed_kb"),
+    requests: mean("step_request_count"),
+    domNodes: mean("dom_nodes"),
+  };
+  return {
+    ...averages,
+    ...computeEcoindex({ domNodes: averages.domNodes, sizeKb: averages.compressedKb, requests: averages.requests }),
+  };
+}

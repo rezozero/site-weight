@@ -92,17 +92,44 @@ export function writeReport({ report, outDir, runId, requestDetails }) {
   if (measuredSteps > 0) {
     const averageDelta = average(sumDecompressedDelta, measuredSteps);
     const averageCompressed = average(sumCompressed, measuredSteps);
+    // The journey EcoIndex and its request and DOM averages, per page view.
+    const journey = report.journeyEcoindex;
+    const journeyRequests = journey ? journey.requests.toFixed(1) : "";
+    const journeyDomNodes = journey ? journey.domNodes.toFixed(1) : "";
+    const journeyScore = journey ? journey.score : "";
+    const journeyGrade = journey ? journey.grade : "";
     technicalCsvLines.push(
       [
         "Moyenne",
-        ...Array(4).fill(""),
+        "",
+        "",
+        journeyDomNodes,
+        "",
         average(sumCumulativeDecompressed, measuredSteps),
         averageDelta,
         averageCompressed,
-        ...Array(12).fill(""),
+        journeyRequests,
+        "",
+        journeyScore,
+        journeyGrade,
+        ...Array(8).fill(""),
       ].join(",")
     );
-    humanCsvLines.push(["Moyenne", "", "", averageDelta, averageCompressed, ...Array(6).fill("")].join(","));
+    humanCsvLines.push(
+      [
+        "Moyenne",
+        "",
+        "",
+        averageDelta,
+        averageCompressed,
+        "",
+        journeyRequests,
+        journeyDomNodes,
+        journeyScore,
+        journeyGrade,
+        "",
+      ].join(",")
+    );
   }
 
   const technicalCsvPath = path.join(outDir, `technical_${runId}.csv`);

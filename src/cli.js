@@ -84,6 +84,17 @@ async function main() {
     requestDetails,
   });
 
+  const journey = report.journeyEcoindex;
+  if (journey) {
+    const leftOut = journey.leftOutCount > 0 ? `, ${journey.leftOutCount} failed step(s) left out` : "";
+    console.log(
+      `Journey EcoIndex: ${journey.score} (${journey.grade}) over ${journey.pageCount} page(s)${leftOut}` +
+        ` - per page: ${journey.compressedKb.toFixed(1)} kB, ${journey.requests.toFixed(1)} requests,` +
+        ` ${journey.domNodes.toFixed(1)} DOM nodes`
+    );
+  } else {
+    console.log("Journey EcoIndex: none, every step failed");
+  }
   console.log(`OK: ${csvPath}`);
   console.log(`OK: ${technicalCsvPath}`);
   if (requestsPath) {

@@ -3,7 +3,7 @@ import path from "node:path";
 import { chromium } from "playwright";
 
 import { logProgress, warnProgress } from "../utils/logger.js";
-import { computeEcoindex } from "../utils/ecoindex.js";
+import { computeEcoindex, computeJourneyEcoindex } from "../utils/ecoindex.js";
 import { createRunFolder } from "../utils/run-folder.js";
 import { sleep } from "../utils/time.js";
 import { normalizeTrailingSlash } from "../utils/url.js";
@@ -26,8 +26,14 @@ function createModeAccumulator(mode) {
   return (metrics) => {
     compressedKb = Math.round((compressedKb + metrics.compressed_kb) * 10) / 10;
     requestCount += metrics.request_count;
-    if (mode !== "cumulative") return metrics;
-    return { ...metrics, compressed_kb: compressedKb, request_count: requestCount };
+    // The step's own values, whatever the mode: the journey EcoIndex uses them.
+    const stepMetrics = {
+      ...metrics,
+      step_compressed_kb: metrics.compressed_kb,
+      step_request_count: metrics.request_count,
+    };
+    if (mode !== "cumulative") return stepMetrics;
+    return { ...stepMetrics, compressed_kb: compressedKb, request_count: requestCount };
   };
 }
 
@@ -360,6 +366,7 @@ async function runJourneyInBrowser({ cfg, browser, stepTimeoutMs, outRoot, viewp
     scroll: cfg.scroll || {},
     generatedAt: new Date().toISOString(),
     results,
+    journeyEcoindex: computeJourneyEcoindex(results),
   };
 
   for (let i = 0; i < results.length; i += 1) {
