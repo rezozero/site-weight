@@ -23,7 +23,7 @@ The tool follows a **user journey** defined in a `journey.js` file and measures 
 
 - Measurement window per step: from action start to settling + delay + scroll.
 - `request_count`: number of requests observed within the window.
-- `compressed_kb`: transferred size (compressed bytes).
+- `compressed_kb`: transferred size, as received over the network: compressed body plus response headers. On a small file the headers can weigh more than the body.
 - Decompressed size: size of the resources once decoded, for the resources that started loading within the step window. It is read from ResourceTiming (`decodedBodySize`) when the browser exposes it for enough resources, otherwise from the response bodies. It includes resources reused from the browser cache, while `compressed_kb` only counts bytes actually transferred: after a full page load, the decompressed size can be much larger than the compressed one.
 - In the reports, the decompressed size of a step is `decompressed_kb_delta` (technical CSV) and "taille (decompressé kB)" (summary CSV); `decompressed_kb` and "taille cumulative (decompressé kB)" are the running total since the start of the journey.
 - `dom_nodes`: GreenIT method (excluding `svg` descendants).

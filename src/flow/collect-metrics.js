@@ -49,6 +49,7 @@ export function createCdpTracker(client, getCurrentStepIndex) {
   client.on("Network.loadingFinished", (evt) => {
     const rec = cdpReq.get(evt.requestId);
     if (!rec) return;
+    // Every byte received for the request, response headers included.
     rec.encodedBytes += Number(evt.encodedDataLength || 0);
   });
 
@@ -207,7 +208,7 @@ export async function computeStepMetrics({
     notes: {
       perfDecodedCoveragePct: Math.round(perfCoverage * 100),
       decompressedMethod: perfCoverage >= 0.3 ? "ResourceTiming(decodedBodySize)" : "Playwright(response.body) best-effort",
-      compressedMethod: "CDP Network.loadingFinished encodedDataLength (payload only)",
+      compressedMethod: "CDP Network.loadingFinished encodedDataLength (bytes received incl. headers)",
       scrollToEnd: !!cfg.scroll?.enabled,
       linkMatch: step?.linkMatch || "",
       navigationFallback: step?.navigationFallback || "",
