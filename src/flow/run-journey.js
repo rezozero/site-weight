@@ -1,11 +1,11 @@
-import fs from "node:fs";
 import path from "node:path";
 
 import { chromium } from "playwright";
 
 import { logProgress, warnProgress } from "../utils/logger.js";
 import { computeEcoindex } from "../utils/ecoindex.js";
-import { nowIsoSafe, sleep } from "../utils/time.js";
+import { createRunFolder } from "../utils/run-folder.js";
+import { sleep } from "../utils/time.js";
 import { normalizeTrailingSlash } from "../utils/url.js";
 import { DEFAULT_VIEWPORT } from "../utils/viewport.js";
 import {
@@ -50,6 +50,7 @@ function withTimeout(promise, ms, message) {
 const DEFAULT_SETTLE_PAUSE_MS = 1000;
 
 // `outRoot`, `viewport` and `headed` come from the CLI; `viewport` overrides the journey's.
+// Each run gets its own folder in `outRoot`, `<journey-folder>/reports/` by default.
 export async function runJourney({ cfg, cfgPath, outRoot, viewport, headed = false }) {
   const stepTimeoutMs = Number(cfg.stepTimeoutMs ?? DEFAULT_STEP_TIMEOUT_MS);
   if (!Number.isFinite(stepTimeoutMs) || stepTimeoutMs <= 0) {
@@ -62,7 +63,7 @@ export async function runJourney({ cfg, cfgPath, outRoot, viewport, headed = fal
       cfg,
       browser,
       stepTimeoutMs,
-      outRoot: outRoot ?? path.dirname(cfgPath),
+      outRoot: outRoot ?? path.join(path.dirname(cfgPath), "reports"),
       viewport: viewport ?? cfg.viewport ?? DEFAULT_VIEWPORT,
     });
   } finally {
@@ -72,9 +73,7 @@ export async function runJourney({ cfg, cfgPath, outRoot, viewport, headed = fal
 }
 
 async function runJourneyInBrowser({ cfg, browser, stepTimeoutMs, outRoot, viewport }) {
-  const runId = `${(cfg.name || "journey").slice(0, 40)}__${nowIsoSafe()}`.replace(/\s+/g, "_");
-  const outDir = path.join(outRoot, `reports-${nowIsoSafe()}`);
-  fs.mkdirSync(outDir, { recursive: true });
+  const { outDir, runId } = createRunFolder(outRoot, cfg.name);
 
   logProgress(`Viewport ${viewport.width}x${viewport.height}`);
   const context = await browser.newContext({ viewport: { width: viewport.width, height: viewport.height } });

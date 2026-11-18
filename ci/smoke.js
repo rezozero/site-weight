@@ -31,6 +31,7 @@ const CONTENT_TYPES = {
 const JOURNEYS = [
   {
     file: "journey.steps.js",
+    runSlug: "smoke-steps",
     cliArgs: ["--viewport", "1920x1080"],
     useOutOption: true,
     cumulative: false,
@@ -39,6 +40,7 @@ const JOURNEYS = [
   },
   {
     file: "journey.urls.js",
+    runSlug: "smoke-urls",
     cliArgs: [],
     useOutOption: false,
     // mode: "cumulative": each step counts the requests since the start.
@@ -117,19 +119,21 @@ function check(condition, message) {
   }
 }
 
-function listReportDirs(folder) {
-  return fs.readdirSync(folder).filter((name) => name.startsWith("reports-"));
-}
-
 function checkReports(journey, reportsRoot, baseUrl, label) {
-  const reportDirs = listReportDirs(reportsRoot);
-  check(reportDirs.length === 1, `${label}: expected one reports-* folder in ${reportsRoot}, found ${reportDirs.length}`);
-  const reportDir = path.join(reportsRoot, reportDirs[0]);
+  const reportDirs = fs.existsSync(reportsRoot) ? fs.readdirSync(reportsRoot) : [];
+  check(reportDirs.length === 1, `${label}: expected one run folder in ${reportsRoot}, found ${reportDirs.length}`);
+  const runId = reportDirs[0];
+  const runIdPattern = new RegExp(`^\\d{4}-\\d{2}-\\d{2}_\\d{2}-\\d{2}-\\d{2}_${journey.runSlug}$`);
+  check(runIdPattern.test(runId), `${label}: run folder "${runId}" is not <YYYY-MM-DD_HH-mm-ss>_${journey.runSlug}`);
+  const reportDir = path.join(reportsRoot, runId);
   const files = fs.readdirSync(reportDir);
-  const humanCsv = files.find((name) => name.endsWith(".csv") && !name.startsWith("technical_"));
-  const technicalCsv = files.find((name) => name.startsWith("technical_"));
-  const requestsJson = files.find((name) => name.startsWith("requests_"));
-  check(humanCsv && technicalCsv && requestsJson, `${label}: missing report files (${files.join(", ")})`);
+  const humanCsv = `${runId}.csv`;
+  const technicalCsv = `technical_${runId}.csv`;
+  const requestsJson = `requests_${runId}.json`;
+  check(
+    [humanCsv, technicalCsv, requestsJson].every((name) => files.includes(name)),
+    `${label}: missing report files (${files.join(", ")})`
+  );
 
   const stepCount = journey.expectedPaths.length;
   const human = readCsv(path.join(reportDir, humanCsv));
@@ -190,10 +194,11 @@ async function main() {
 
       try {
         check(run.status === 0, `${label}: CLI exited with ${run.status}\n${run.output}`);
+        const defaultReportsRoot = path.join(workDir, "reports");
         if (journey.useOutOption) {
-          check(listReportDirs(workDir).length === 0, `${label}: --out ignored, reports written next to the journey`);
+          check(!fs.existsSync(defaultReportsRoot), `${label}: --out ignored, reports written next to the journey`);
         }
-        const reportDir = checkReports(journey, journey.useOutOption ? outDir : workDir, baseUrl, label);
+        const reportDir = checkReports(journey, journey.useOutOption ? outDir : defaultReportsRoot, baseUrl, label);
         console.log(`ok ${label}${KEEP_REPORTS ? ` (${reportDir})` : ""}`);
       } catch (error) {
         failed = true;
