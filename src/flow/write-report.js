@@ -1,6 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
 
+const TECHNICAL_HEADER =
+  "step_index,step_name,page_url,dom_nodes,mode,decompressed_kb,decompressed_kb_delta,compressed_kb,request_count,window_duration_ms,ecoindex_score,ecoindex_grade,perf_decoded_coverage_pct,decompressed_method,compressed_method,scroll_to_end,link_match,navigation_fallback,action,error";
+const HUMAN_HEADER =
+  "index,name,url,taille (decompressé kB),taille (compressé kB),taille cumulative (decompressé kB),nombre de requete,dom_nodes,ecoindex,note,erreur";
+
 // Sums of one-decimal kB values drift (0.1 + 0.2): keep one decimal.
 function roundKb(kb) {
   return Math.round(kb * 10) / 10;
@@ -10,39 +15,44 @@ function csvText(value) {
   return `"${String(value ?? "").replace(/"/g, '""')}"`;
 }
 
+function average(sum, count) {
+  return (sum / count).toFixed(1);
+}
+
 // Each result holds the decompressed size of its own step. The reports show it
 // as the step size ("delta") and as a running total over the journey.
 export function writeReport({ report, outDir, runId, requestDetails }) {
-  const technicalCsvLines = [
-    "step_index,step_name,page_url,dom_nodes,mode,decompressed_kb,decompressed_kb_delta,compressed_kb,request_count,window_duration_ms,ecoindex_score,ecoindex_grade,perf_decoded_coverage_pct,decompressed_method,compressed_method,scroll_to_end,link_match,navigation_fallback,action,error",
-  ];
+  const technicalCsvLines = [TECHNICAL_HEADER];
+  const humanCsvLines = [HUMAN_HEADER];
 
+  let measuredSteps = 0;
   let cumulativeDecompressed = 0;
-  let stepsCount = 0;
-  let sumDecompressed = 0;
+  let sumCumulativeDecompressed = 0;
   let sumDecompressedDelta = 0;
   let sumCompressed = 0;
 
   for (const r of report.results) {
-    // A step that timed out has no measurement: only its name and error.
+    // A step that timed out has no measurement: only its name and error, and
+    // it stays out of the averages.
     if (r.timedOut) {
-      technicalCsvLines.push(
-        [r.stepIndex, csvText(r.name), csvText(r.page_url), ...Array(16).fill(""), csvText(r.error)].join(",")
-      );
+      const identity = [r.stepIndex, csvText(r.name), csvText(r.page_url)];
+      technicalCsvLines.push([...identity, ...Array(16).fill(""), csvText(r.error)].join(","));
+      humanCsvLines.push([...identity, ...Array(7).fill(""), csvText(r.error)].join(","));
       continue;
     }
+
     const decompressedDelta = r.step_decompressed_kb;
     cumulativeDecompressed = roundKb(cumulativeDecompressed + decompressedDelta);
-    sumDecompressed += cumulativeDecompressed;
+    sumCumulativeDecompressed += cumulativeDecompressed;
     sumDecompressedDelta += decompressedDelta;
     sumCompressed += r.compressed_kb;
-    stepsCount += 1;
+    measuredSteps += 1;
 
     technicalCsvLines.push(
       [
         r.stepIndex,
-        `"${String(r.name).replace(/"/g, '""')}"`,
-        `"${String(r.page_url || "").replace(/"/g, '""')}"`,
+        csvText(r.name),
+        csvText(r.page_url),
         r.dom_nodes,
         r.mode,
         cumulativeDecompressed,
@@ -53,8 +63,8 @@ export function writeReport({ report, outDir, runId, requestDetails }) {
         r.ecoindex_score,
         r.ecoindex_grade || "",
         r.notes.perfDecodedCoveragePct,
-        `"${r.notes.decompressedMethod.replace(/"/g, '""')}"`,
-        `"${r.notes.compressedMethod.replace(/"/g, '""')}"`,
+        csvText(r.notes.decompressedMethod),
+        csvText(r.notes.compressedMethod),
         r.notes.scrollToEnd ? "true" : "false",
         r.notes.linkMatch || "",
         r.notes.navigationFallback || "",
@@ -62,68 +72,14 @@ export function writeReport({ report, outDir, runId, requestDetails }) {
         csvText(r.error),
       ].join(",")
     );
-  }
-
-  if (stepsCount > 0) {
-    technicalCsvLines.push(
-      [
-        "Moyenne",
-        "",
-        "",
-        "",
-        "",
-        (sumDecompressed / stepsCount).toFixed(1),
-        (sumDecompressedDelta / stepsCount).toFixed(1),
-        (sumCompressed / stepsCount).toFixed(1),
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-      ].join(",")
-    );
-  }
-
-  const technicalCsvPath = path.join(outDir, `technical_${runId}.csv`);
-  fs.writeFileSync(technicalCsvPath, technicalCsvLines.join("\n"), "utf-8");
-
-  const humanCsvLines = [
-    "index,name,url,taille (decompressé kB),taille (compressé kB),taille cumulative (decompressé kB),nombre de requete,dom_nodes,ecoindex,note,erreur",
-  ];
-
-  let humanCumulative = 0;
-  let sumHumanDelta = 0;
-  let sumHumanCompressed = 0;
-  let humanCount = 0;
-
-  for (const r of report.results) {
-    if (r.timedOut) {
-      humanCsvLines.push(
-        [r.stepIndex, csvText(r.name), csvText(r.page_url), ...Array(7).fill(""), csvText(r.error)].join(",")
-      );
-      continue;
-    }
-    const decompressedDelta = r.step_decompressed_kb;
-    humanCumulative = roundKb(humanCumulative + decompressedDelta);
-    sumHumanDelta += decompressedDelta;
-    sumHumanCompressed += r.compressed_kb;
-    humanCount += 1;
-
     humanCsvLines.push(
       [
         r.stepIndex,
-        `"${String(r.name).replace(/"/g, '""')}"`,
-        `"${String(r.page_url || "").replace(/"/g, '""')}"`,
+        csvText(r.name),
+        csvText(r.page_url),
         decompressedDelta,
         r.compressed_kb,
-        humanCumulative,
+        cumulativeDecompressed,
         r.request_count,
         r.dom_nodes,
         r.ecoindex_score,
@@ -133,23 +89,24 @@ export function writeReport({ report, outDir, runId, requestDetails }) {
     );
   }
 
-  if (humanCount > 0) {
-    humanCsvLines.push(
+  if (measuredSteps > 0) {
+    const averageDelta = average(sumDecompressedDelta, measuredSteps);
+    const averageCompressed = average(sumCompressed, measuredSteps);
+    technicalCsvLines.push(
       [
         "Moyenne",
-        "",
-        "",
-        (sumHumanDelta / humanCount).toFixed(1),
-        (sumHumanCompressed / humanCount).toFixed(1),
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
+        ...Array(4).fill(""),
+        average(sumCumulativeDecompressed, measuredSteps),
+        averageDelta,
+        averageCompressed,
+        ...Array(12).fill(""),
       ].join(",")
     );
+    humanCsvLines.push(["Moyenne", "", "", averageDelta, averageCompressed, ...Array(6).fill("")].join(","));
   }
+
+  const technicalCsvPath = path.join(outDir, `technical_${runId}.csv`);
+  fs.writeFileSync(technicalCsvPath, technicalCsvLines.join("\n"), "utf-8");
 
   const csvPath = path.join(outDir, `${runId}.csv`);
   fs.writeFileSync(csvPath, humanCsvLines.join("\n"), "utf-8");

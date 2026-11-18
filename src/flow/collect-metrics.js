@@ -49,6 +49,7 @@ export function createCdpTracker(client, getCurrentStepIndex) {
   client.on("Network.loadingFinished", (evt) => {
     const rec = cdpReq.get(evt.requestId);
     if (!rec) return;
+    // Every byte received for the request, response headers included.
     rec.encodedBytes += Number(evt.encodedDataLength || 0);
   });
 
@@ -74,6 +75,32 @@ export function bindResponseFallback(page, decompressedFallbackByRequestId, cdpR
     } catch {
       // ignore
     }
+  });
+}
+
+// GreenIT-Analysis DOM count (analyseFrame.js): every element, except that an
+// <svg> counts as one node whatever it contains.
+export async function countDomNodes(page) {
+  return page.evaluate(() => {
+    function getNbChildsExcludingNestedSvg(element) {
+      if (element.nodeType === Node.TEXT_NODE) return 0;
+      let nbElements = 1;
+      for (let i = 0; i < element.childNodes.length; i += 1) {
+        if (element.childNodes[i].tagName !== "svg") {
+          nbElements += getNbChildsExcludingNestedSvg(element.childNodes[i]);
+        } else {
+          nbElements += 1;
+        }
+      }
+      return nbElements;
+    }
+
+    let domSize = document.getElementsByTagName("*").length;
+    const svgElements = document.getElementsByTagName("svg");
+    for (let i = 0; i < svgElements.length; i += 1) {
+      domSize -= getNbChildsExcludingNestedSvg(svgElements[i]) - 1;
+    }
+    return Math.max(0, domSize);
   });
 }
 
@@ -181,7 +208,7 @@ export async function computeStepMetrics({
     notes: {
       perfDecodedCoveragePct: Math.round(perfCoverage * 100),
       decompressedMethod: perfCoverage >= 0.3 ? "ResourceTiming(decodedBodySize)" : "Playwright(response.body) best-effort",
-      compressedMethod: "CDP Network.loadingFinished encodedDataLength (payload only)",
+      compressedMethod: "CDP Network.loadingFinished encodedDataLength (bytes received incl. headers)",
       scrollToEnd: !!cfg.scroll?.enabled,
       linkMatch: step?.linkMatch || "",
       navigationFallback: step?.navigationFallback || "",

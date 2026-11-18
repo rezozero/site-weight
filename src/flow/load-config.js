@@ -6,6 +6,7 @@ import { pathToFileURL } from "node:url";
 import { FORCE_ESM_PARAM } from "../utils/force-esm-hooks.js";
 import { warnProgress } from "../utils/logger.js";
 import { isAbsoluteHttpUrl } from "../utils/url.js";
+import { isViewport } from "../utils/viewport.js";
 
 const JOURNEY_MODES = ["per_step", "cumulative"];
 
@@ -52,9 +53,19 @@ function normalizeUrlEntry(url, startUrl) {
   return { absoluteUrl, relativeUrl: url };
 }
 
+function isNonNegativeNumber(value) {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0;
+}
+
 function normalizeConfig(rawCfg) {
   if (!rawCfg || typeof rawCfg !== "object") {
     throw new Error("Invalid config: expected an object export from journey.js.");
+  }
+  if (rawCfg.settle?.pauseMs !== undefined && !isNonNegativeNumber(rawCfg.settle.pauseMs)) {
+    throw new Error("Invalid config: settle.pauseMs must be a number of milliseconds, 0 or more.");
+  }
+  if (rawCfg.viewport !== undefined && !isViewport(rawCfg.viewport)) {
+    throw new Error("Invalid config: viewport must be { width, height }, in whole pixels.");
   }
 
   const steps = Array.isArray(rawCfg.steps) ? rawCfg.steps : [];

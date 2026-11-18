@@ -15,7 +15,8 @@
     "METHODOLOGY.md"
   ],
   "scripts": {
-    "journey": "node src/cli.js ./journey.sample.js"
+    "journey": "node src/cli.js ./journey.sample.js",
+    "smoke": "node ci/smoke.js"
   },
   "keywords": [
     "ecoindex",

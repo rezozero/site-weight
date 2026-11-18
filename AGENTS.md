@@ -8,15 +8,18 @@ Node + Playwright CLI that replays a user journey (`journey.js`) and measures it
 
 ```bash
 pnpm install
-pnpm journey                         # runs journey.sample.js
-node src/cli.js <journey.js|folder>  # a folder must contain journey.js
+pnpm smoke                           # local smoke run, see below
+pnpm journey                         # runs journey.sample.js against a real site
+node src/cli.js <journey.js|folder>  # a folder must contain journey.js; --help lists the options
 ```
 
-Reports land next to the journey file in `reports-<timestamp>/` (git-ignored): `<runId>.csv` (human), `technical_<runId>.csv`, `requests_<runId>.json`.
+Reports land next to the journey file (or in `--out`) in `reports-<timestamp>/` (git-ignored): `<runId>.csv` (human), `technical_<runId>.csv`, `requests_<runId>.json`.
 
 ## Verify your work
 
-There are no tests and no linter, and none are added without approval. Before calling a change done, run `pnpm journey` and open the generated CSVs: every step has a row, and the columns line up with the header.
+Run `pnpm smoke` before calling a change done; GitHub Actions runs it on every pull request (`.github/workflows/ci.yml`). It serves `ci/site/`, runs `ci/journey.*.js` from a temp CommonJS project and checks the three reports. On that static site the sizes are stable from run to run, so a refactor must leave them unchanged. When a change touches a CLI option or a journey key, cover it in `ci/smoke.js`.
+
+There is no linter and no test framework: `ci/smoke.js` is plain Node, and adding a framework needs approval.
 
 ## Conventions
 
