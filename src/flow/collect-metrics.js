@@ -77,6 +77,32 @@ export function bindResponseFallback(page, decompressedFallbackByRequestId, cdpR
   });
 }
 
+// GreenIT-Analysis DOM count (analyseFrame.js): every element, except that an
+// <svg> counts as one node whatever it contains.
+export async function countDomNodes(page) {
+  return page.evaluate(() => {
+    function getNbChildsExcludingNestedSvg(element) {
+      if (element.nodeType === Node.TEXT_NODE) return 0;
+      let nbElements = 1;
+      for (let i = 0; i < element.childNodes.length; i += 1) {
+        if (element.childNodes[i].tagName !== "svg") {
+          nbElements += getNbChildsExcludingNestedSvg(element.childNodes[i]);
+        } else {
+          nbElements += 1;
+        }
+      }
+      return nbElements;
+    }
+
+    let domSize = document.getElementsByTagName("*").length;
+    const svgElements = document.getElementsByTagName("svg");
+    for (let i = 0; i < svgElements.length; i += 1) {
+      domSize -= getNbChildsExcludingNestedSvg(svgElements[i]) - 1;
+    }
+    return Math.max(0, domSize);
+  });
+}
+
 // ResourceTiming keeps 250 entries by default and drops the rest: raise the
 // limit on every new document, before the page starts loading resources.
 export async function raiseResourceTimingBuffer(context) {
