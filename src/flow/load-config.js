@@ -4,6 +4,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { FORCE_ESM_PARAM } from "../utils/force-esm-hooks.js";
+import { warnProgress } from "../utils/logger.js";
 import { isAbsoluteHttpUrl } from "../utils/url.js";
 
 const COMMONJS_GLOBAL_ERROR = /\b(module|exports|require) is not defined\b/;
@@ -56,6 +57,15 @@ function normalizeConfig(rawCfg) {
 
   const steps = Array.isArray(rawCfg.steps) ? rawCfg.steps : [];
   if (steps.length > 0) {
+    if (!isAbsoluteHttpUrl(rawCfg.startUrl)) {
+      throw new Error("Invalid config: steps require startUrl, an absolute http(s) URL.");
+    }
+    // Step 0 is the landing on startUrl: run-journey.js never runs its actions.
+    const first = steps[0] || {};
+    const firstHasActions = Array.isArray(first.actions) ? first.actions.length > 0 : false;
+    if (firstHasActions || (first.action && first.action !== "noop")) {
+      warnProgress("The first step measures the landing on startUrl: its action(s) are not run.");
+    }
     return { ...rawCfg, steps, usesUrls: false };
   }
 
