@@ -175,6 +175,31 @@ function checkReports(journey, reportsRoot, baseUrl, label) {
   return reportDir;
 }
 
+// A run that fails before measuring anything (here, an unreachable startUrl)
+// exits with code 1 and leaves no run folder behind.
+async function checkFailedRun() {
+  const label = "failed run";
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "site-weight-smoke-"));
+  fs.writeFileSync(
+    path.join(workDir, "journey.js"),
+    "export default { name: \"Smoke failure\", startUrl: \"http://127.0.0.1:1/\", steps: [{ action: \"noop\" }] };\n"
+  );
+  try {
+    const run = await runCli([workDir], process.env);
+    check(run.status === 1, `${label}: CLI exited with ${run.status}, expected 1\n${run.output}`);
+    const reportsRoot = path.join(workDir, "reports");
+    const leftovers = fs.existsSync(reportsRoot) ? fs.readdirSync(reportsRoot) : [];
+    check(leftovers.length === 0, `${label}: left ${leftovers.join(", ")} in ${reportsRoot}`);
+    console.log(`ok ${label}`);
+    return true;
+  } catch (error) {
+    console.error(`FAIL ${error.message}`);
+    return false;
+  } finally {
+    fs.rmSync(workDir, { recursive: true, force: true });
+  }
+}
+
 async function main() {
   const server = await startSiteServer();
   const baseUrl = `http://127.0.0.1:${server.address().port}/`;
@@ -208,6 +233,10 @@ async function main() {
           fs.rmSync(workDir, { recursive: true, force: true });
         }
       }
+    }
+
+    if (!(await checkFailedRun())) {
+      failed = true;
     }
   } finally {
     server.close();

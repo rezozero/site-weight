@@ -28,10 +28,11 @@ function slugify(name) {
 
 // Creates `<reportsRoot>/<YYYY-MM-DD_HH-mm-ss>_<journey-slug>/`, with a `-2`,
 // `-3`… suffix when a run already took that name in the same second. The
-// folder name is also the run id used in the report filenames.
-export function createRunFolder(reportsRoot, journeyName) {
+// folder name is also the run id used in the report filenames. The folder is
+// created once the journey has run: `startedAt` keeps the run's start time in it.
+export function createRunFolder(reportsRoot, journeyName, startedAt) {
   fs.mkdirSync(reportsRoot, { recursive: true });
-  const baseName = `${localTimestamp(new Date())}_${slugify(journeyName)}`;
+  const baseName = `${localTimestamp(startedAt)}_${slugify(journeyName)}`;
   for (let attempt = 1; ; attempt += 1) {
     const runId = attempt === 1 ? baseName : `${baseName}-${attempt}`;
     const outDir = path.join(reportsRoot, runId);

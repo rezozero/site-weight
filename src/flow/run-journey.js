@@ -73,7 +73,7 @@ export async function runJourney({ cfg, cfgPath, outRoot, viewport, headed = fal
 }
 
 async function runJourneyInBrowser({ cfg, browser, stepTimeoutMs, outRoot, viewport }) {
-  const { outDir, runId } = createRunFolder(outRoot, cfg.name);
+  const startedAt = new Date();
 
   logProgress(`Viewport ${viewport.width}x${viewport.height}`);
   const context = await browser.newContext({ viewport: { width: viewport.width, height: viewport.height } });
@@ -344,6 +344,9 @@ async function runJourneyInBrowser({ cfg, browser, stepTimeoutMs, outRoot, viewp
   }
 
   logProgress(`Journey ${incomplete ? "stopped" : "completed"} (${results.length} steps)`);
+
+  // Created only now: a run that fails before this point leaves no empty folder.
+  const { outDir, runId } = createRunFolder(outRoot, cfg.name, startedAt);
 
   const requestDetails = {
     runId,
