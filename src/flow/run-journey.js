@@ -44,6 +44,10 @@ function withTimeout(promise, ms, message) {
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
+// Pause between the two settle passes of a step, before scrolling: covers late
+// requests that start after the network went idle (hydration, lazy widgets).
+const DEFAULT_SETTLE_PAUSE_MS = 1000;
+
 export async function runJourney({ cfg, cfgPath }) {
   const stepTimeoutMs = Number(cfg.stepTimeoutMs ?? DEFAULT_STEP_TIMEOUT_MS);
   if (!Number.isFinite(stepTimeoutMs) || stepTimeoutMs <= 0) {
@@ -67,6 +71,8 @@ async function runJourneyInBrowser({ cfg, cfgPath, browser, stepTimeoutMs }) {
   const context = await browser.newContext({ viewport: { width: 1366, height: 768 } });
   await raiseResourceTimingBuffer(context);
   const page = await context.newPage();
+
+  const settlePauseMs = cfg.settle?.pauseMs ?? DEFAULT_SETTLE_PAUSE_MS;
 
   const client = await context.newCDPSession(page);
   await client.send("Network.enable");
@@ -181,7 +187,7 @@ async function runJourneyInBrowser({ cfg, cfgPath, browser, stepTimeoutMs }) {
   // requests triggered by the scroll land too.
   async function settleStep() {
     await settle(page, cfg);
-    await sleep(1000);
+    await sleep(settlePauseMs);
     await autoScrollIfEnabled(page, cfg);
     await settle(page, cfg);
   }

@@ -52,9 +52,16 @@ function normalizeUrlEntry(url, startUrl) {
   return { absoluteUrl, relativeUrl: url };
 }
 
+function isNonNegativeNumber(value) {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0;
+}
+
 function normalizeConfig(rawCfg) {
   if (!rawCfg || typeof rawCfg !== "object") {
     throw new Error("Invalid config: expected an object export from journey.js.");
+  }
+  if (rawCfg.settle?.pauseMs !== undefined && !isNonNegativeNumber(rawCfg.settle.pauseMs)) {
+    throw new Error("Invalid config: settle.pauseMs must be a number of milliseconds, 0 or more.");
   }
 
   const steps = Array.isArray(rawCfg.steps) ? rawCfg.steps : [];
