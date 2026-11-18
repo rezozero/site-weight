@@ -7,6 +7,7 @@ import { logProgress, warnProgress } from "../utils/logger.js";
 import { computeEcoindex } from "../utils/ecoindex.js";
 import { nowIsoSafe, sleep } from "../utils/time.js";
 import { normalizeTrailingSlash } from "../utils/url.js";
+import { DEFAULT_VIEWPORT } from "../utils/viewport.js";
 import {
   autoScrollIfEnabled,
   bindResponseFallback,
@@ -48,27 +49,35 @@ function withTimeout(promise, ms, message) {
 // requests that start after the network went idle (hydration, lazy widgets).
 const DEFAULT_SETTLE_PAUSE_MS = 1000;
 
-export async function runJourney({ cfg, cfgPath }) {
+// `outRoot`, `viewport` and `headed` come from the CLI; `viewport` overrides the journey's.
+export async function runJourney({ cfg, cfgPath, outRoot, viewport, headed = false }) {
   const stepTimeoutMs = Number(cfg.stepTimeoutMs ?? DEFAULT_STEP_TIMEOUT_MS);
   if (!Number.isFinite(stepTimeoutMs) || stepTimeoutMs <= 0) {
     throw new Error("Invalid config: stepTimeoutMs must be a positive number of milliseconds.");
   }
 
-  const browser = await chromium.launch({ headless: true });
+  const browser = await chromium.launch({ headless: !headed });
   try {
-    return await runJourneyInBrowser({ cfg, cfgPath, browser, stepTimeoutMs });
+    return await runJourneyInBrowser({
+      cfg,
+      browser,
+      stepTimeoutMs,
+      outRoot: outRoot ?? path.dirname(cfgPath),
+      viewport: viewport ?? cfg.viewport ?? DEFAULT_VIEWPORT,
+    });
   } finally {
     // Also on failure: a leftover headless Chromium keeps running otherwise.
     await browser.close();
   }
 }
 
-async function runJourneyInBrowser({ cfg, cfgPath, browser, stepTimeoutMs }) {
+async function runJourneyInBrowser({ cfg, browser, stepTimeoutMs, outRoot, viewport }) {
   const runId = `${(cfg.name || "journey").slice(0, 40)}__${nowIsoSafe()}`.replace(/\s+/g, "_");
-  const outDir = path.join(path.dirname(cfgPath), `reports-${nowIsoSafe()}`);
+  const outDir = path.join(outRoot, `reports-${nowIsoSafe()}`);
   fs.mkdirSync(outDir, { recursive: true });
 
-  const context = await browser.newContext({ viewport: { width: 1366, height: 768 } });
+  logProgress(`Viewport ${viewport.width}x${viewport.height}`);
+  const context = await browser.newContext({ viewport: { width: viewport.width, height: viewport.height } });
   await raiseResourceTimingBuffer(context);
   const page = await context.newPage();
 
@@ -340,6 +349,7 @@ async function runJourneyInBrowser({ cfg, cfgPath, browser, stepTimeoutMs }) {
   const requestDetails = {
     runId,
     generatedAt: new Date().toISOString(),
+    viewport: { width: viewport.width, height: viewport.height },
     steps: [],
   };
   const report = {

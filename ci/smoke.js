@@ -31,11 +31,18 @@ const CONTENT_TYPES = {
 const JOURNEYS = [
   {
     file: "journey.steps.js",
+    cliArgs: ["--viewport", "1920x1080"],
+    useOutOption: true,
     expectedPaths: ["/", "/page-2/", "/"],
+    expectedViewport: { width: 1920, height: 1080 },
   },
   {
     file: "journey.urls.js",
+    cliArgs: [],
+    useOutOption: false,
     expectedPaths: ["/", "/page-2/"],
+    // Set by the journey's own "viewport" key.
+    expectedViewport: { width: 1024, height: 768 },
   },
 ];
 
@@ -107,10 +114,14 @@ function check(condition, message) {
   }
 }
 
-function checkReports(journey, workDir, baseUrl, label) {
-  const reportDirs = fs.readdirSync(workDir).filter((name) => name.startsWith("reports-"));
-  check(reportDirs.length === 1, `${label}: expected one reports-* folder, found ${reportDirs.length}`);
-  const reportDir = path.join(workDir, reportDirs[0]);
+function listReportDirs(folder) {
+  return fs.readdirSync(folder).filter((name) => name.startsWith("reports-"));
+}
+
+function checkReports(journey, reportsRoot, baseUrl, label) {
+  const reportDirs = listReportDirs(reportsRoot);
+  check(reportDirs.length === 1, `${label}: expected one reports-* folder in ${reportsRoot}, found ${reportDirs.length}`);
+  const reportDir = path.join(reportsRoot, reportDirs[0]);
   const files = fs.readdirSync(reportDir);
   const humanCsv = files.find((name) => name.endsWith(".csv") && !name.startsWith("technical_"));
   const technicalCsv = files.find((name) => name.startsWith("technical_"));
@@ -144,6 +155,12 @@ function checkReports(journey, workDir, baseUrl, label) {
 
   const details = JSON.parse(fs.readFileSync(path.join(reportDir, requestsJson), "utf-8"));
   check(details.steps.length === stepCount, `${label}: requests JSON has ${details.steps.length} steps`);
+  const { width, height } = details.viewport || {};
+  const expected = journey.expectedViewport;
+  check(
+    width === expected.width && height === expected.height,
+    `${label}: viewport ${width}x${height}, expected ${expected.width}x${expected.height}`
+  );
   return reportDir;
 }
 
@@ -160,11 +177,16 @@ async function main() {
       const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "site-weight-smoke-"));
       fs.writeFileSync(path.join(workDir, "package.json"), "{ \"type\": \"commonjs\" }\n");
       fs.copyFileSync(path.join(CI_DIR, journey.file), path.join(workDir, "journey.js"));
-      const run = await runCli([workDir], { ...process.env, SITE_WEIGHT_SMOKE_URL: baseUrl });
+      const outDir = path.join(workDir, "out");
+      const outArgs = journey.useOutOption ? ["--out", outDir] : [];
+      const run = await runCli([workDir, ...journey.cliArgs, ...outArgs], { ...process.env, SITE_WEIGHT_SMOKE_URL: baseUrl });
 
       try {
         check(run.status === 0, `${label}: CLI exited with ${run.status}\n${run.output}`);
-        const reportDir = checkReports(journey, workDir, baseUrl, label);
+        if (journey.useOutOption) {
+          check(listReportDirs(workDir).length === 0, `${label}: --out ignored, reports written next to the journey`);
+        }
+        const reportDir = checkReports(journey, journey.useOutOption ? outDir : workDir, baseUrl, label);
         console.log(`ok ${label}${KEEP_REPORTS ? ` (${reportDir})` : ""}`);
       } catch (error) {
         failed = true;
