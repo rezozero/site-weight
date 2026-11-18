@@ -10,7 +10,7 @@ async function main() {
   logProgress(`Loading config from ${cfgPath}`);
   logProgress(`Config loaded (name: ${cfg.name || "journey"}, steps: ${cfg.steps?.length || 0})`);
 
-  const { report, outDir, runId, requestDetails } = await runJourney({ cfg, cfgPath });
+  const { report, outDir, runId, requestDetails, incomplete } = await runJourney({ cfg, cfgPath });
   const { csvPath, technicalCsvPath, requestsPath } = writeReport({
     report,
     outDir,
@@ -22,6 +22,10 @@ async function main() {
   console.log(`OK: ${technicalCsvPath}`);
   if (requestsPath) {
     console.log(`OK: ${requestsPath}`);
+  }
+  if (incomplete) {
+    console.error("Journey stopped on a step timeout: the reports only cover the steps before it.");
+    process.exitCode = 1;
   }
 }
 
