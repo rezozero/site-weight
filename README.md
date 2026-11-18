@@ -12,7 +12,7 @@ This repo contains a small Playwright-based CLI that measures network weight for
 
 ## Install
 
-Node 20 or later. Run it without installing:
+Node 22 or later (any maintained LTS). Run it without installing:
 
 ```bash
 npx @rezo-zero/site-weight ./journey.js
@@ -52,6 +52,8 @@ npx @rezo-zero/site-weight ./example.com/
 ## Journey Config (journey.js)
 
 Export a default object. Use `steps` for detailed journeys. If `steps` is empty or missing, the script uses `urls` instead.
+
+`journey.js` is always loaded as an ES module, whatever the `type` field of your `package.json` says. A CommonJS `module.exports = { ... }` also works.
 
 ### Full steps example
 
