@@ -236,7 +236,7 @@ Pull requests are welcome. The repository follows [git flow](https://danielkumme
 - branch from `develop` and open the pull request against `develop`;
 - write commit messages and the PR title as [Conventional Commits](https://www.conventionalcommits.org/), in English: PRs are squash-merged, and [git-cliff](https://git-cliff.org/) builds `CHANGELOG.md` from those titles;
 - keep one logical change per pull request;
-- run `pnpm smoke` first: it serves a small local site from `ci/site/` and checks the reports of two journeys. CI runs it on Node 22, 24 and 26.
+- run `pnpm smoke` first: it serves a small local site from `ci/site/`, checks the reports of two journeys, then checks how the CLI handles an invalid config, an unreachable site, a failed action and a step timeout. CI runs it on Node 22, 24 and 26.
 
 ## License
 

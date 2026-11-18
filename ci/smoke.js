@@ -1,5 +1,6 @@
 // Smoke run: serves ci/site locally, runs each smoke journey through the CLI
-// and checks the reports it writes. Exits non-zero on the first failure.
+// and checks the reports it writes, then checks how the CLI handles invalid,
+// failing and timed-out journeys. Exits non-zero if any check fails.
 // Usage: node ci/smoke.js [--keep] [--cli <path>]
 //   --keep  leave the reports on disk
 //   --cli   run another copy of src/cli.js, e.g. the one from an installed tarball
@@ -10,6 +11,8 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
+
+import { createRunFolder } from "../src/utils/run-folder.js";
 
 const CI_DIR = path.dirname(fileURLToPath(import.meta.url));
 const SITE_DIR = path.join(CI_DIR, "site");
@@ -83,6 +86,18 @@ function startSiteServer() {
   });
   return new Promise((resolve) => {
     server.listen(0, "127.0.0.1", () => resolve(server));
+  });
+}
+
+// A free local port: the connection is refused, unlike the ports Chromium
+// blocks as unsafe (port 1 fails with ERR_UNSAFE_PORT before connecting).
+function findClosedPort() {
+  return new Promise((resolve) => {
+    const server = http.createServer();
+    server.listen(0, "127.0.0.1", () => {
+      const { port } = server.address();
+      server.close(() => resolve(port));
+    });
   });
 }
 
@@ -206,28 +221,150 @@ function checkReports(journey, reportsRoot, baseUrl, label) {
   return reportDir;
 }
 
-// A run that fails before measuring anything (here, an unreachable startUrl)
-// exits with code 1 and leaves no run folder behind.
-async function checkFailedRun() {
-  const label = "failed run";
+const TIMEOUT_STEP_MS = 5000;
+
+// The step after the failed action times out: the reports keep steps 0 to 3,
+// the timed-out one with its error only, and step 4 never runs.
+function checkTimeoutReports(reportDir, runId, baseUrl, label) {
+  const human = readCsv(path.join(reportDir, `${runId}.csv`));
+  const technical = readCsv(path.join(reportDir, `technical_${runId}.csv`));
+  // Header, steps 0 to 3, average row.
+  check(human.length === 6, `${label}: human CSV has ${human.length} lines, expected 6`);
+  check(technical.length === 6, `${label}: technical CSV has ${technical.length} lines, expected 6`);
+  human.forEach((row, i) => check(row.length === HUMAN_COLUMNS, `${label}: human CSV line ${i + 1} has ${row.length} columns`));
+  technical.forEach((row, i) => check(
+    row.length === TECHNICAL_COLUMNS,
+    `${label}: technical CSV line ${i + 1} has ${row.length} columns`
+  ));
+
+  const stepRows = human.slice(1, -1);
+  const errors = stepRows.map((row) => row[HUMAN_COLUMNS - 1]);
+  const technicalErrors = technical.slice(1, -1).map((row) => row[TECHNICAL_COLUMNS - 1]);
+  check(errors[0] === "" && errors[1] === "", `${label}: unexpected error on steps 0-1 ("${errors[0]}", "${errors[1]}")`);
+  check(
+    stepRows[1][2] === new URL("/page-2/", baseUrl).toString(),
+    `${label}: goto step ended on ${stepRows[1][2]}, expected /page-2/`
+  );
+  check(errors[2].startsWith("hover: Unknown step.action"), `${label}: failed action error "${errors[2]}"`);
+  check(
+    errors[3].startsWith(`Step 3 timed out after ${TIMEOUT_STEP_MS} ms`),
+    `${label}: timed-out step error "${errors[3]}"`
+  );
+  check(
+    technicalErrors.every((error, i) => error === errors[i]),
+    `${label}: technical CSV errors do not match the human ones`
+  );
+
+  const details = JSON.parse(fs.readFileSync(path.join(reportDir, `requests_${runId}.json`), "utf-8"));
+  check(details.steps.length === 4, `${label}: requests JSON has ${details.steps.length} steps, expected 4`);
+}
+
+// Journeys the CLI must reject or stop, all with exit code 1. Each journey is
+// built from `urls`: `baseUrl`, the local site, and `closedUrl`, a local port
+// nothing listens on. Without `checkReports`, the run must leave no run folder
+// behind.
+const FAILURE_CASES = [
+  {
+    label: "invalid startUrl",
+    journey: () => ({ name: "Smoke bad start", startUrl: "example.com", steps: [{ action: "noop" }] }),
+    output: /steps require startUrl/,
+  },
+  {
+    label: "invalid mode",
+    journey: ({ baseUrl }) => ({ name: "Smoke bad mode", startUrl: baseUrl, mode: "total", steps: [{ action: "noop" }] }),
+    output: /mode must be one of/,
+  },
+  {
+    // Fails on the first step, before measuring anything.
+    label: "unreachable startUrl",
+    journey: ({ closedUrl }) => ({ name: "Smoke unreachable", startUrl: closedUrl, steps: [{ action: "noop" }] }),
+    output: /ERR_CONNECTION_REFUSED/,
+  },
+  {
+    label: "failed action and step timeout",
+    journey: ({ baseUrl }) => ({
+      name: "Smoke timeout",
+      startUrl: baseUrl,
+      stepTimeoutMs: TIMEOUT_STEP_MS,
+      settle: { extraMs: 100, pauseMs: 0 },
+      steps: [
+        { name: "Home", action: "noop" },
+        { name: "Page 2", action: "goto", url: new URL("/page-2/", baseUrl).toString() },
+        { name: "Unknown action", action: "hover" },
+        { name: "Missing element", action: "waitForSelector", selector: "#missing" },
+        { name: "Never run", action: "noop" },
+      ],
+    }),
+    output: /Journey stopped on a step timeout/,
+    checkReports: checkTimeoutReports,
+  },
+];
+
+async function checkFailureCase(failureCase, urls) {
+  const { label } = failureCase;
   const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "site-weight-smoke-"));
   fs.writeFileSync(
     path.join(workDir, "journey.js"),
-    "export default { name: \"Smoke failure\", startUrl: \"http://127.0.0.1:1/\", steps: [{ action: \"noop\" }] };\n"
+    `export default ${JSON.stringify(failureCase.journey(urls), null, 2)};\n`
   );
   try {
     const run = await runCli([workDir], process.env);
     check(run.status === 1, `${label}: CLI exited with ${run.status}, expected 1\n${run.output}`);
+    check(failureCase.output.test(run.output), `${label}: output does not match ${failureCase.output}\n${run.output}`);
     const reportsRoot = path.join(workDir, "reports");
-    const leftovers = fs.existsSync(reportsRoot) ? fs.readdirSync(reportsRoot) : [];
-    check(leftovers.length === 0, `${label}: left ${leftovers.join(", ")} in ${reportsRoot}`);
+    const runFolders = fs.existsSync(reportsRoot) ? fs.readdirSync(reportsRoot) : [];
+    if (failureCase.checkReports) {
+      check(runFolders.length === 1, `${label}: expected one run folder in ${reportsRoot}, found ${runFolders.length}`);
+      failureCase.checkReports(path.join(reportsRoot, runFolders[0]), runFolders[0], urls.baseUrl, label);
+    } else {
+      check(runFolders.length === 0, `${label}: left ${runFolders.join(", ")} in ${reportsRoot}`);
+    }
+    console.log(`ok ${label}${KEEP_REPORTS ? ` (${workDir})` : ""}`);
+    return true;
+  } catch (error) {
+    console.error(`FAIL ${error.message}`);
+    return false;
+  } finally {
+    if (!KEEP_REPORTS) {
+      fs.rmSync(workDir, { recursive: true, force: true });
+    }
+  }
+}
+
+async function checkHelp() {
+  const label = "--help";
+  const run = await runCli(["--help"], process.env);
+  try {
+    check(run.status === 0, `${label}: CLI exited with ${run.status}\n${run.output}`);
+    check(/^Usage: site-weight /.test(run.output), `${label}: no usage in the output\n${run.output}`);
+    console.log(`ok ${label}`);
+    return true;
+  } catch (error) {
+    console.error(`FAIL ${error.message}`);
+    return false;
+  }
+}
+
+// Two runs of a journey started in the same second: the second folder gets a
+// "-2" suffix. The CLI cannot start two runs in one second on demand, so this
+// calls the module directly (the repository's copy, even with --cli).
+function checkRunFolderSuffix() {
+  const label = "run folder suffix";
+  const reportsRoot = fs.mkdtempSync(path.join(os.tmpdir(), "site-weight-smoke-"));
+  try {
+    const startedAt = new Date(2026, 0, 2, 3, 4, 5);
+    const first = createRunFolder(reportsRoot, "Smoke suffix", startedAt);
+    const second = createRunFolder(reportsRoot, "Smoke suffix", startedAt);
+    check(first.runId === "2026-01-02_03-04-05_smoke-suffix", `${label}: first run folder "${first.runId}"`);
+    check(second.runId === `${first.runId}-2`, `${label}: second run folder "${second.runId}", expected "${first.runId}-2"`);
+    check(fs.existsSync(second.outDir), `${label}: ${second.outDir} was not created`);
     console.log(`ok ${label}`);
     return true;
   } catch (error) {
     console.error(`FAIL ${error.message}`);
     return false;
   } finally {
-    fs.rmSync(workDir, { recursive: true, force: true });
+    fs.rmSync(reportsRoot, { recursive: true, force: true });
   }
 }
 
@@ -267,7 +404,13 @@ async function main() {
       }
     }
 
-    if (!(await checkFailedRun())) {
+    const closedUrl = `http://127.0.0.1:${await findClosedPort()}/`;
+    for (const failureCase of FAILURE_CASES) {
+      if (!(await checkFailureCase(failureCase, { baseUrl, closedUrl }))) {
+        failed = true;
+      }
+    }
+    if (!(await checkHelp()) || !checkRunFolderSuffix()) {
       failed = true;
     }
   } finally {
