@@ -21,14 +21,14 @@ The tool follows a **user journey** defined in a `journey.js` file and measures 
 
 ## Technical overview (brief)
 
-- Measurement window per step: from action start to settling + delay + scroll.
-- `request_count`: number of requests observed within the window.
+- Measurement window per step: from the start of the action to the end of the settling (settle, pause, scroll, settle again). When the action changes the page URL, the window opens 300 ms before the action.
+- `request_count`: number of requests started within the window. Inline data (`data:`, `blob:`, `about:` URLs) and WebSocket connections (`ws:`, `wss:`) are not counted.
 - `compressed_kb`: transferred size, as received over the network: compressed body plus response headers. On a small file the headers can weigh more than the body.
 - Decompressed size: size of the resources once decoded, for the resources that started loading within the step window. It is read from ResourceTiming (`decodedBodySize`) when the browser exposes it for enough resources, otherwise from the response bodies. It includes resources reused from the browser cache, while `compressed_kb` only counts bytes actually transferred: after a full page load, the decompressed size can be much larger than the compressed one.
 - In the reports, the decompressed size of a step is `decompressed_kb_delta` (technical CSV) and "taille (decompressé kB)" (summary CSV); `decompressed_kb` and "taille cumulative (decompressé kB)" are the running total since the start of the journey.
 - `dom_nodes`: GreenIT method (excluding `svg` descendants).
 - EcoIndex: computed from observed values (estimate).
-- With `mode: "cumulative"`, `request_count`, `compressed_kb` and the EcoIndex of a step cover the journey from its start instead of the step alone.
+- With `mode: "cumulative"`, `request_count`, `compressed_kb` and the EcoIndex of a step cover the journey from its start (the sum of the step windows so far) instead of the step alone.
 
 ## How to interpret the results
 
