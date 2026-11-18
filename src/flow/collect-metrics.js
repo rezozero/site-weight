@@ -173,11 +173,16 @@ export async function computeStepMetrics({
 
   // The document keeps the entries of earlier steps (SPA navigation): only
   // count the ones that started within this step window, like the CDP slice.
+  // When the URL changes, the window opens before the action and overlaps the
+  // end of the previous one: an entry from that overlap belongs to the previous
+  // step, which already counted it (the CDP slice gets this from `stepIndex`).
+  const previousWindowEndMs = windowEndTimes.get(stepIndex - 1);
   const perf = await perfSizes(page);
   let decodedFromPerf = 0;
   let decodedPerfCounted = 0;
   for (const e of perf) {
     if (typeof windowStartMs === "number" && e.startMs < windowStartMs) continue;
+    if (typeof previousWindowEndMs === "number" && e.startMs <= previousWindowEndMs) continue;
     if (typeof windowEndMs === "number" && e.startMs > windowEndMs) continue;
     if (e.decodedBodySize > 0) {
       decodedFromPerf += e.decodedBodySize;
