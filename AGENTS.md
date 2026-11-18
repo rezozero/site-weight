@@ -13,7 +13,7 @@ pnpm journey                         # runs journey.sample.js against a real sit
 node src/cli.js <journey.js|folder>  # a folder must contain journey.js; --help lists the options
 ```
 
-Reports land next to the journey file (or in `--out`) in `reports-<timestamp>/` (git-ignored): `<runId>.csv` (human), `technical_<runId>.csv`, `requests_<runId>.json`.
+Reports land in `reports/<runId>/` next to the journey file, or in `<dir>/<runId>/` with `--out <dir>` (git-ignored); `<runId>` is `<YYYY-MM-DD_HH-mm-ss>_<journey-slug>` in local time. Files: `<runId>.csv` (human), `technical_<runId>.csv`, `requests_<runId>.json`.
 
 ## Verify your work
 

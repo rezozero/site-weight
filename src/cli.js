@@ -11,7 +11,7 @@ import { parseViewport } from "./utils/viewport.js";
 const USAGE = `Usage: site-weight <journey.js|folder> [options]
 
 Options:
-  --out <dir>        Folder that receives reports-<timestamp>/ (default: the journey folder)
+  --out <dir>        Folder that receives one sub-folder per run (default: <journey folder>/reports)
   --viewport <WxH>   Browser viewport, e.g. 1920x1080 (default: the journey "viewport", else 1366x768)
   --headed           Show the browser window instead of running headless
   -h, --help         Show this help`;

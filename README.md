@@ -51,7 +51,7 @@ npx @rezo-zero/site-weight ./example.com/
 
 | Option | Effect |
 | --- | --- |
-| `--out <dir>` | Writes `reports-<timestamp>/` into `<dir>` instead of the journey folder. |
+| `--out <dir>` | Writes the run folders into `<dir>` instead of `<journey-folder>/reports/`. |
 | `--viewport <WxH>` | Browser viewport, e.g. `1920x1080`. Overrides the journey's `viewport`. |
 | `--headed` | Shows the browser window, to watch or debug a journey. |
 | `-h`, `--help` | Prints the usage. |
@@ -178,7 +178,7 @@ export default {
 
 ## Output
 
-Reports are written to a timestamped folder inside the `journey.js` directory, `/<journey-folder>/reports-<timestamp>/`, or inside the `--out` folder. Filenames include a run id derived from the journey name and timestamp. `request_count` is computed within a step window (start to end), and `window_duration_ms` reports that window length. Each row also includes `page_url`, the current page URL after the step finishes. Three files are produced: `<runId>.csv` (human-friendly), `technical_<runId>.csv` (full technical report) and `requests_<runId>.json` (every request observed, per step).
+Each run writes its reports to its own folder, `<journey-folder>/reports/<runId>/`, or `<dir>/<runId>/` with `--out <dir>`. The run id is the local date and time of the run followed by the journey `name` as a slug, e.g. `2026-11-18_15-17-32_example-journey`: run folders sort chronologically. Two runs started in the same second get a `-2`, `-3`… suffix. Add `reports/` to your `.gitignore`. `request_count` is computed within a step window (start to end), and `window_duration_ms` reports that window length. Each row also includes `page_url`, the current page URL after the step finishes. Three files are produced: `<runId>.csv` (human-friendly), `technical_<runId>.csv` (full technical report) and `requests_<runId>.json` (every request observed, per step).
 
 [METHODOLOGY.md](METHODOLOGY.md) explains, for non-developers, what the numbers mean and their limits.
 
