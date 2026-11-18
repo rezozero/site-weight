@@ -91,9 +91,10 @@ export function writeReport({ report, outDir, runId, requestDetails }) {
 
   if (measuredSteps > 0) {
     const averageDelta = average(sumDecompressedDelta, measuredSteps);
-    const averageCompressed = average(sumCompressed, measuredSteps);
-    // The journey EcoIndex and its request and DOM averages, per page view.
+    // The journey EcoIndex and the three averages it is computed from, per
+    // page view; the decompressed sizes average the column above them.
     const journey = report.journeyEcoindex;
+    const averageCompressed = journey ? journey.compressedKb.toFixed(1) : average(sumCompressed, measuredSteps);
     const journeyRequests = journey ? journey.requests.toFixed(1) : "";
     const journeyDomNodes = journey ? journey.domNodes.toFixed(1) : "";
     const journeyScore = journey ? journey.score : "";

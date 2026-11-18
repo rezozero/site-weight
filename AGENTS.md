@@ -29,11 +29,13 @@ There is no linter and no test framework: `ci/smoke.js` is plain Node, and addin
 - The report schema is a public contract (users import the CSVs): add columns at the end, never rename or remove one. The human CSV headers are in French on purpose.
 - Journey config keys and behaviour are documented in `README.md`; update it in the same change when you touch `load-config.js` or `run-journey.js`.
 - `METHODOLOGY.md` explains the measurement to non-developers and lists the EcoIndex / GreenIT sources: keep it in sync when a metric changes.
+- The measurement and the score follow EcoIndex_python (formula, rounding, units, DOM count, viewport, scroll); the only intended difference is that pages after the first one are loaded in the same browser session. `METHODOLOGY.md` lists every difference with an EcoIndex result: a change that adds one, or that moves a score, updates that list.
 - Code, comments, docs and commits are in English.
 
 ## Changes that need approval
 
 - Changing the report schema (see above).
+- Moving the measurement or the score away from EcoIndex_python.
 - Adding a build system, linter or test framework.
 - Adding, removing or upgrading Playwright.
 

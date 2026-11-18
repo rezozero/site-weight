@@ -16,7 +16,10 @@
     <main>
       <h1>Home</h1>
       <svg width="16" height="16" aria-hidden="true"><rect width="16" height="16"/><g><rect width="8" height="8"/></g></svg>
+      <div id="widget"></div>
+      <script>document.getElementById("widget").attachShadow({ mode: "open" }).innerHTML = "<p>Shadow</p><span>DOM</span>";</script>
       <div class="tall"></div>
+      <img src="/logo.svg?below-the-fold" alt="" width="16" height="16" loading="lazy">
     </main>
   </body>
 </html>
