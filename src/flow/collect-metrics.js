@@ -77,6 +77,16 @@ export function bindResponseFallback(page, decompressedFallbackByRequestId, cdpR
   });
 }
 
+// ResourceTiming keeps 250 entries by default and drops the rest: raise the
+// limit on every new document, before the page starts loading resources.
+export async function raiseResourceTimingBuffer(context) {
+  await context.addInitScript(() => {
+    performance.setResourceTimingBufferSize(10000);
+  });
+}
+
+// Returns the navigation and resource entries of the current document, with
+// `startMs` as an epoch timestamp so they can be matched to a step window.
 export async function perfSizes(page) {
   return await page.evaluate(() => {
     const nav = performance.getEntriesByType("navigation")[0];
@@ -88,6 +98,7 @@ export async function perfSizes(page) {
       name: e.name,
       entryType: e.entryType,
       initiatorType: e.initiatorType || "navigation",
+      startMs: performance.timeOrigin + e.startTime,
       transferSize: e.transferSize || 0,
       encodedBodySize: e.encodedBodySize || 0,
       decodedBodySize: e.decodedBodySize || 0,
@@ -143,10 +154,14 @@ export async function computeStepMetrics({
   const compressedBytes = cdpSlice.reduce((acc, r) => acc + (r.encodedBytes || 0), 0);
   const requestCount = cdpSlice.length;
 
+  // The document keeps the entries of earlier steps (SPA navigation): only
+  // count the ones that started within this step window, like the CDP slice.
   const perf = await perfSizes(page);
   let decodedFromPerf = 0;
   let decodedPerfCounted = 0;
   for (const e of perf) {
+    if (typeof windowStartMs === "number" && e.startMs < windowStartMs) continue;
+    if (typeof windowEndMs === "number" && e.startMs > windowEndMs) continue;
     if (e.decodedBodySize > 0) {
       decodedFromPerf += e.decodedBodySize;
       decodedPerfCounted++;
@@ -170,7 +185,7 @@ export async function computeStepMetrics({
     stepIndex,
     mode,
     compressed_kb: toKb(compressedBytes),
-    decompressed_kb: toKb(decompressedBytes),
+    step_decompressed_kb: toKb(decompressedBytes),
     request_count: requestCount,
     window_duration_ms: windowDurationMs,
     notes: {

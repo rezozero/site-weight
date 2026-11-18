@@ -12,6 +12,7 @@ import {
   bindResponseFallback,
   computeStepMetrics,
   createCdpTracker,
+  raiseResourceTimingBuffer,
   settle,
 } from "./collect-metrics.js";
 
@@ -22,6 +23,7 @@ export async function runJourney({ cfg, cfgPath }) {
 
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({ viewport: { width: 1366, height: 768 } });
+  await raiseResourceTimingBuffer(context);
   const page = await context.newPage();
 
   const client = await context.newCDPSession(page);
