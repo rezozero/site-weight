@@ -33,6 +33,7 @@ const JOURNEYS = [
     file: "journey.steps.js",
     cliArgs: ["--viewport", "1920x1080"],
     useOutOption: true,
+    cumulative: false,
     expectedPaths: ["/", "/page-2/", "/"],
     expectedViewport: { width: 1920, height: 1080 },
   },
@@ -40,6 +41,8 @@ const JOURNEYS = [
     file: "journey.urls.js",
     cliArgs: [],
     useOutOption: false,
+    // mode: "cumulative": each step counts the requests since the start.
+    cumulative: true,
     expectedPaths: ["/", "/page-2/"],
     // Set by the journey's own "viewport" key.
     expectedViewport: { width: 1024, height: 768 },
@@ -140,6 +143,7 @@ function checkReports(journey, reportsRoot, baseUrl, label) {
   ));
   check(human.at(-1)[0] === "Moyenne", `${label}: human CSV has no average row`);
 
+  let previousRequests = 0;
   journey.expectedPaths.forEach((expectedPath, i) => {
     const [index, , url, stepKb, compressedKb, , requests, domNodes] = human[i + 1];
     const stepLabel = `${label} step ${index}`;
@@ -150,7 +154,10 @@ function checkReports(journey, reportsRoot, baseUrl, label) {
     check(Number(domNodes) > 0, `${stepLabel}: no DOM nodes counted`);
     if (i === 0) {
       check(Number(requests) >= 3, `${stepLabel}: ${requests} requests, expected the page, its CSS and its image`);
+    } else if (journey.cumulative) {
+      check(Number(requests) > previousRequests, `${stepLabel}: cumulative request count did not grow (${requests})`);
     }
+    previousRequests = Number(requests);
   });
 
   const details = JSON.parse(fs.readFileSync(path.join(reportDir, requestsJson), "utf-8"));
