@@ -164,6 +164,37 @@ function checkReports(journey, reportsRoot, baseUrl, label) {
     previousRequests = Number(requests);
   });
 
+  // The average row holds the journey EcoIndex, computed from the per-page
+  // averages of the step values: in cumulative mode, the last running total
+  // over the step count.
+  const stepRows = human.slice(1, -1);
+  const averageRow = human.at(-1);
+  const [, , , , , , averageRequests, averageDomNodes, journeyScore, journeyGrade] = averageRow;
+  const requestTotal = journey.cumulative
+    ? Number(stepRows.at(-1)[6])
+    : stepRows.reduce((sum, row) => sum + Number(row[6]), 0);
+  const domTotal = stepRows.reduce((sum, row) => sum + Number(row[7]), 0);
+  check(
+    averageRequests === (requestTotal / stepCount).toFixed(1),
+    `${label}: average requests per page ${averageRequests}, expected ${(requestTotal / stepCount).toFixed(1)}`
+  );
+  check(
+    averageDomNodes === (domTotal / stepCount).toFixed(1),
+    `${label}: average DOM nodes ${averageDomNodes}, expected ${(domTotal / stepCount).toFixed(1)}`
+  );
+  check(
+    Number(journeyScore) > 0 && Number(journeyScore) <= 100 && /^[A-G]$/.test(journeyGrade),
+    `${label}: journey EcoIndex "${journeyScore}" / "${journeyGrade}" in the average row`
+  );
+  const technicalAverage = technical.at(-1);
+  check(
+    technicalAverage[3] === averageDomNodes &&
+      technicalAverage[8] === averageRequests &&
+      technicalAverage[10] === journeyScore &&
+      technicalAverage[11] === journeyGrade,
+    `${label}: technical average row does not match the human one`
+  );
+
   const details = JSON.parse(fs.readFileSync(path.join(reportDir, requestsJson), "utf-8"));
   check(details.steps.length === stepCount, `${label}: requests JSON has ${details.steps.length} steps`);
   const { width, height } = details.viewport || {};
@@ -219,6 +250,7 @@ async function main() {
 
       try {
         check(run.status === 0, `${label}: CLI exited with ${run.status}\n${run.output}`);
+        check(/Journey EcoIndex: [\d.]+ \([A-G]\)/.test(run.output), `${label}: no journey EcoIndex in the output`);
         const defaultReportsRoot = path.join(workDir, "reports");
         if (journey.useOutOption) {
           check(!fs.existsSync(defaultReportsRoot), `${label}: --out ignored, reports written next to the journey`);

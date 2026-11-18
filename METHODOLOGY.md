@@ -29,6 +29,17 @@ The tool follows a **user journey** defined in a `journey.js` file and measures 
 - `dom_nodes`: GreenIT method (excluding `svg` descendants).
 - EcoIndex: computed from observed values (estimate).
 - With `mode: "cumulative"`, `request_count`, `compressed_kb` and the EcoIndex of a step cover the journey from its start (the sum of the step windows so far) instead of the step alone.
+- Journey EcoIndex (the "Moyenne" row): EcoIndex computed from the per-page averages of the step values (`compressed_kb`, `request_count`, `dom_nodes` of each step on its own, whatever the mode), over the steps that did not fail.
+
+## Journey score
+
+The last row of the reports, "Moyenne", gives one EcoIndex for the whole journey. It is the score of an average page view of the journey: the downloaded data, the number of requests and the page size (DOM) of each step are averaged over the steps, and EcoIndex is computed from these averages.
+
+On a site that navigates without reloading, the first page carries most of the cost (scripts, styles, fonts); the following pages reuse them and only download their own content. The journey score therefore improves as the journey goes deeper into the site, which is what a real visit costs on average per page.
+
+- The score of a single step after the first one is not comparable with an official EcoIndex result: EcoIndex measures one page loaded from scratch, while the step only counts what it downloaded on top of the previous ones.
+- The journey score depends on the length of the journey: compare journeys with the same steps.
+- Steps whose action failed are left out of the journey score.
 
 ## How to interpret the results
 

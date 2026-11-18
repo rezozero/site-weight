@@ -202,6 +202,16 @@ export default {
 
 Each run writes its reports to its own folder, `<journey-folder>/reports/<runId>/`, or `<dir>/<runId>/` with `--out <dir>`. The run id is the local date and time of the run followed by the journey `name` as a slug, e.g. `2026-11-18_15-17-32_example-journey`: run folders sort chronologically. Two runs started in the same second get a `-2`, `-3`… suffix. Add `reports/` to your `.gitignore`. `request_count` counts the requests started within a step window (start to end), except `data:`, `blob:`, `about:` and WebSocket (`ws:`, `wss:`) URLs, and `window_duration_ms` reports that window length. Each row also includes `page_url`, the current page URL after the step finishes. Three files are produced: `<runId>.csv` (human-friendly), `technical_<runId>.csv` (full technical report) and `requests_<runId>.json` (every request observed, per step).
 
+### Journey EcoIndex
+
+The last row of both CSV files, `Moyenne`, scores the whole journey: it is the EcoIndex of the journey's average page view, computed from the transferred size, the request count and the DOM size of each step, averaged over the steps. The CLI prints it at the end of the run:
+
+```
+Journey EcoIndex: 57.4 (C) over 15 page(s) - per page: 311.4 kB, 30.7 requests, 910.7 DOM nodes
+```
+
+The cache and client-side navigation lower the cost of the pages after the landing one, so a longer journey through the site scores better than its first page alone. The averages use the values of each step on its own, whatever the `mode`: in `"cumulative"` mode, the request and DOM cells of that row are averages per page, while the size cells keep averaging the column above them. Failed steps are left out of the journey EcoIndex, as they are no page view; the CLI says how many.
+
 [METHODOLOGY.md](METHODOLOGY.md) explains, for non-developers, what the numbers mean and their limits.
 
 ## EcoIndex sources
