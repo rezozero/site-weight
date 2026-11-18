@@ -1,120 +1,46 @@
-# AGENTS.md
-# Guidance for agentic coding in this repo.
+# site-weight
 
-## Purpose
-- This repo is a small Node + Playwright script that measures network weight for a user journey.
-- The primary entry point is `src/index.js` and JS configs like `example.com/journey.js`.
+Node + Playwright CLI that replays a user journey (`journey.js`) and measures its network weight per step, with an estimated EcoIndex. Published on npm as `@rezo-zero/site-weight`; open source on GitHub.
 
-## Build / Lint / Test Commands
-- No tests are configured in this repository. Do not add test commands unless requested.
-- No linting or formatting tools are configured. Follow existing style in the code.
+`src/cli.js` is the only entry point (`bin`); the package has no programmatic API, hence no `main`. Flow: `src/flow/load-config.js` → `run-journey.js` (browser + step loop) → `collect-metrics.js` → `write-report.js`.
 
-### Install
-- `npm install`
+## Commands
 
-### Run (main script)
-- `node src/index.js example.com`
-- Pass a folder name only; `journey.js` must exist inside that folder.
-
-### Output
-- Reports are written inside the journey folder under `reports-<timestamp>/` as JSON and CSV.
-- Output filenames include a run id derived from the journey name and timestamp.
-- Two CSV files are produced: `<runId>.csv` (human-friendly) and `technical_<runId>.csv` (full technical report).
-- `request_count` is computed within a step window (start to end). `window_duration_ms` reports that window length. Each row includes `page_url` after the step finishes.
-
-## Code Style and Conventions
-
-### Language and Runtime
-- JavaScript only. No TypeScript in this repo.
-- ESM is used via `.js` files; `package.json` is `type: module`.
-- Use Node built-ins with the `node:` prefix (example: `import fs from "node:fs"`).
-
-### Imports
-- Group Node built-ins first, then third-party imports.
-- Use named imports for external libs when appropriate (example: `{ chromium }` from Playwright).
-- Keep import lists sorted by module type (built-ins, then third-party).
-
-### Formatting
-- 2-space indentation for JavaScript.
-- Double quotes for strings.
-- Semicolons at statement ends.
-- Prefer trailing commas in multiline objects and arrays when already used nearby.
-- Keep lines readable; wrap long expressions over multiple lines with consistent indentation.
-
-### Naming
-- `camelCase` for variables and functions (`autoScrollIfEnabled`, `computeStepMetrics`).
-- `UPPER_SNAKE_CASE` for constants (`KB`).
-- Use descriptive names over abbreviations (`decompressedFallbackByRequestId`).
-
-### Types and Data Shapes
-- No explicit type system. Be explicit in runtime checks instead.
-- Prefer `Number(...)` or `??` defaults when reading config values.
-- Keep config-driven logic centralized; read all config once at startup.
-
-### Error Handling
-- Use guard clauses for invalid inputs (`if (!url) return false`).
-- Use `try/catch` for best-effort operations (e.g., response body reads).
-- Fail fast for unknown actions with clear error messages.
-- Top-level errors should log and exit non-zero (`process.exit(1)`).
-
-### Async and Promises
-- Use `async/await` consistently.
-- Small helper functions for repeated async steps (`settle`, `autoScrollIfEnabled`).
-- Avoid unhandled promises; `await` all critical async calls.
-
-### Browser Automation (Playwright)
-- Use `chromium.launch({ headless: true })` unless a task requires otherwise.
-- Prefer `page.waitForLoadState` for settling network activity.
-- Keep timeouts explicit and realistic for UI actions.
-- Use CDP (`context.newCDPSession`) only where needed for network metrics.
-
-### Data Collection and Metrics
-- Keep units explicit (bytes vs KB). Use helpers like `toKb`.
-- Separate data collection from reporting.
-- Keep report schema stable; add new fields in a backward-compatible way.
-
-### Journey Config Files
-- Use `journey.js` with a default export object.
-- Keep config keys consistent (`name`, `startUrl`, `steps`, `settle`, `scroll`, `urls`, `actions`).
-- If `steps` is empty or missing, `urls` is used instead.
-- `urls` can be absolute or relative; relative entries require `startUrl`.
-- When using `urls`, the runner tries a link click on matching `href` (absolute match first, then relative, with trailing slash tolerance). If no link is found, it falls back to `window.location.href` and logs a warning.
-- Steps can define `actions` (multi-action sequence). If `actions` is present, `action` is ignored.
-
-### File and Directory Conventions
-- Place journey configs under a site-specific directory (example: `example.com/`).
-- Reports are output to `/<folder>/reports-<timestamp>/`. Do not commit generated reports unless requested.
-
-## Repo-Specific Workflow Notes
-- No build step is required.
-- No linting tools are set up.
-- No tests are configured; avoid adding test instructions.
-
-## Cursor / Copilot Rules
-- No `.cursor/rules/`, `.cursorrules`, or `.github/copilot-instructions.md` files are present.
-
-## Metrics References
-- EcoIndex methodology: https://www.ecoindex.fr/comment-ca-marche/
-- EcoIndex quantiles: https://raw.githubusercontent.com/cnumr/EcoIndex_python/main/components/ecoindex/data/quantiles.py
-- EcoIndex grades: https://raw.githubusercontent.com/cnumr/EcoIndex_python/main/components/ecoindex/data/grades.py
-- EcoIndex formula: https://raw.githubusercontent.com/cnumr/EcoIndex_python/main/components/ecoindex/compute/ecoindex.py
-- GreenIT-Analysis: https://github.com/cnumr/GreenIT-Analysis
-- GreenIT DOM count method: https://raw.githubusercontent.com/cnumr/GreenIT-Analysis/master/script/analyseFrame.js
-
-## Practical Examples
-
-### Measure a journey
 ```bash
-npm install
-node src/index.js example.com
+pnpm install
+pnpm smoke                           # local smoke run, see below
+pnpm journey                         # runs journey.sample.js against a real site
+node src/cli.js <journey.js|folder>  # a folder must contain journey.js; --help lists the options
 ```
 
-### Add a new journey config
-- Create a new folder per domain.
-- Copy an existing `journey.js` and update `name`, `startUrl`, and `steps`.
-- Keep the same overall shape and keys unless you also update the script.
+Reports land in `reports/<runId>/` next to the journey file, or in `<dir>/<runId>/` with `--out <dir>` (git-ignored); `<runId>` is `<YYYY-MM-DD_HH-mm-ss>_<journey-slug>` in local time. Files: `<runId>.csv` (human), `technical_<runId>.csv`, `requests_<runId>.json`.
 
-## Changes to Avoid Without Approval
-- Introducing a build system, linting, or test framework.
-- Changing the report output schema.
-- Adding or removing Playwright dependencies.
+## Verify your work
+
+Run `pnpm smoke` before calling a change done; GitHub Actions runs it on every pull request (`.github/workflows/ci.yml`). It serves `ci/site/`, runs `ci/journey.*.js` from a temp CommonJS project and checks the three reports. On that static site the sizes are stable from run to run, so a refactor must leave them unchanged. When a change touches a CLI option or a journey key, cover it in `ci/smoke.js`.
+
+There is no linter and no test framework: `ci/smoke.js` is plain Node, and adding a framework needs approval.
+
+## Conventions
+
+- JavaScript ESM only, no TypeScript, no build step. Built-ins imported with the `node:` prefix, before third-party imports.
+- Style is not enforced by a tool: `.editorconfig` sets 2-space indentation and LF; write double quotes and semicolons, like the existing code.
+- Units are explicit in names and columns (`_kb`, `_ms`).
+- The report schema is a public contract (users import the CSVs): add columns at the end, never rename or remove one. The human CSV headers are in French on purpose.
+- Journey config keys and behaviour are documented in `README.md`; update it in the same change when you touch `load-config.js` or `run-journey.js`.
+- `METHODOLOGY.md` explains the measurement to non-developers and lists the EcoIndex / GreenIT sources: keep it in sync when a metric changes.
+- The measurement and the score follow EcoIndex_python (formula, rounding, units, DOM count, viewport, scroll); the only intended difference is that pages after the first one are loaded in the same browser session. `METHODOLOGY.md` lists every difference with an EcoIndex result: a change that adds one, or that moves a score, updates that list.
+- Code, comments, docs and commits are in English.
+
+## Changes that need approval
+
+- Changing the report schema (see above).
+- Moving the measurement or the score away from EcoIndex_python.
+- Adding a build system, linter or test framework.
+- Adding, removing or upgrading Playwright.
+
+## Git
+
+Git flow: branch from `develop`, pull request to `develop`, squash merge (the PR title becomes the commit). Releases and hotfixes go through `release/*` / `hotfix/*` and a signed tag on `main`. `main` and `develop` are protected: every change, even one line, goes through a branch and a PR.
+
+Commits and PR titles follow Conventional Commits, in English and imperative: `cliff.toml` builds `CHANGELOG.md` from them, and a non-conventional message is dropped from it. One PR = one logical change: keep refactors, reformatting and features in separate PRs.

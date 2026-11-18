@@ -1,33 +1,98 @@
-import fs from "node:fs";
 import path from "node:path";
 
 import { chromium } from "playwright";
 
 import { logProgress, warnProgress } from "../utils/logger.js";
-import { computeEcoindex } from "../utils/ecoindex.js";
-import { nowIsoSafe, sleep } from "../utils/time.js";
+import { computeEcoindex, computeJourneyEcoindex } from "../utils/ecoindex.js";
+import { createRunFolder } from "../utils/run-folder.js";
+import { sleep } from "../utils/time.js";
 import { normalizeTrailingSlash } from "../utils/url.js";
+import { DEFAULT_VIEWPORT } from "../utils/viewport.js";
 import {
   autoScrollIfEnabled,
   bindResponseFallback,
   computeStepMetrics,
+  countDomNodes,
   createCdpTracker,
+  raiseResourceTimingBuffer,
   settle,
 } from "./collect-metrics.js";
 
-export async function runJourney({ cfg, cfgPath }) {
-  const runId = `${(cfg.name || "journey").slice(0, 40)}__${nowIsoSafe()}`.replace(/\s+/g, "_");
-  const outDir = path.join(path.dirname(cfgPath), `reports-${nowIsoSafe()}`);
-  fs.mkdirSync(outDir, { recursive: true });
+// In "cumulative" mode, the transferred size and the request count of a step
+// (and the EcoIndex computed from them) cover the journey from its start.
+function createModeAccumulator(mode) {
+  let compressedKb = 0;
+  let requestCount = 0;
+  return (metrics) => {
+    compressedKb = Math.round((compressedKb + metrics.compressed_kb) * 10) / 10;
+    requestCount += metrics.request_count;
+    // The step's own values, whatever the mode: the journey EcoIndex uses them.
+    const stepMetrics = {
+      ...metrics,
+      step_compressed_kb: metrics.compressed_kb,
+      step_request_count: metrics.request_count,
+    };
+    if (mode !== "cumulative") return stepMetrics;
+    return { ...stepMetrics, compressed_kb: compressedKb, request_count: requestCount };
+  };
+}
 
-  const browser = await chromium.launch({ headless: true });
-  const context = await browser.newContext({ viewport: { width: 1366, height: 768 } });
+const DEFAULT_STEP_TIMEOUT_MS = 120000;
+
+class StepTimeoutError extends Error {}
+
+// Rejects when `promise` takes longer than `ms`. The late promise keeps
+// running until the browser closes; Promise.race keeps its rejection handled.
+function withTimeout(promise, ms, message) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new StepTimeoutError(message)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
+// Pause between the two settle passes of a step, before scrolling: covers late
+// requests that start after the network went idle (hydration, lazy widgets).
+const DEFAULT_SETTLE_PAUSE_MS = 1000;
+
+// `outRoot`, `viewport` and `headed` come from the CLI; `viewport` overrides the journey's.
+// Each run gets its own folder in `outRoot`, `<journey-folder>/reports/` by default.
+export async function runJourney({ cfg, cfgPath, outRoot, viewport, headed = false }) {
+  const stepTimeoutMs = Number(cfg.stepTimeoutMs ?? DEFAULT_STEP_TIMEOUT_MS);
+  if (!Number.isFinite(stepTimeoutMs) || stepTimeoutMs <= 0) {
+    throw new Error("Invalid config: stepTimeoutMs must be a positive number of milliseconds.");
+  }
+
+  const browser = await chromium.launch({ headless: !headed });
+  try {
+    return await runJourneyInBrowser({
+      cfg,
+      browser,
+      stepTimeoutMs,
+      outRoot: outRoot ?? path.join(path.dirname(cfgPath), "reports"),
+      viewport: viewport ?? cfg.viewport ?? DEFAULT_VIEWPORT,
+    });
+  } finally {
+    // Also on failure: a leftover headless Chromium keeps running otherwise.
+    await browser.close();
+  }
+}
+
+async function runJourneyInBrowser({ cfg, browser, stepTimeoutMs, outRoot, viewport }) {
+  const startedAt = new Date();
+
+  logProgress(`Viewport ${viewport.width}x${viewport.height}`);
+  const context = await browser.newContext({ viewport: { width: viewport.width, height: viewport.height } });
+  await raiseResourceTimingBuffer(context);
   const page = await context.newPage();
+
+  const settlePauseMs = cfg.settle?.pauseMs ?? DEFAULT_SETTLE_PAUSE_MS;
 
   const client = await context.newCDPSession(page);
   await client.send("Network.enable");
 
   let currentStepIndex = 0;
+  let journeyStopped = false;
   const windowStartTimes = new Map();
   const windowEndTimes = new Map();
   const { cdpReq, decompressedFallbackByRequestId } = createCdpTracker(client, () => currentStepIndex);
@@ -132,6 +197,51 @@ export async function runJourney({ cfg, cfgPath }) {
     throw new Error(`Unknown step.action: ${stepAction.action}`);
   }
 
+  // Lets the step's late requests land, scrolls if enabled, then lets the
+  // requests triggered by the scroll land too.
+  async function settleStep() {
+    await settle(page, cfg);
+    await sleep(settlePauseMs);
+    await autoScrollIfEnabled(page, cfg);
+    await settle(page, cfg);
+  }
+
+  // Closes the step window, then measures what the step loaded. The caller
+  // adds the result to the report: a step that timed out never gets there.
+  async function measureStep({ step, stepIndex, name, windowStartMs }) {
+    windowStartTimes.set(stepIndex, windowStartMs);
+    windowEndTimes.set(stepIndex, Date.now());
+    // From now on, a new request belongs to the next step: none goes uncounted
+    // between two steps.
+    currentStepIndex = stepIndex + 1;
+    const pageUrl = page.url();
+    const domNodes = await countDomNodes(page);
+    const metrics = applyMode(await computeStepMetrics({
+      cfg,
+      step,
+      stepIndex,
+      cdpReq,
+      decompressedFallbackByRequestId,
+      windowStartTimes,
+      windowEndTimes,
+      page,
+    }));
+    const ecoindex = computeEcoindex({
+      domNodes,
+      sizeKb: metrics.compressed_kb,
+      requests: metrics.request_count,
+    });
+    return {
+      name,
+      page_url: pageUrl,
+      dom_nodes: domNodes,
+      ecoindex_score: ecoindex.score,
+      ecoindex_grade: ecoindex.grade,
+      error: step?.error || "",
+      ...metrics,
+    };
+  }
+
   async function doStep(step, idx) {
     currentStepIndex = idx;
     const startTarget = step?.absoluteUrl || step?.url || "";
@@ -143,6 +253,7 @@ export async function runJourney({ cfg, cfgPath }) {
 
     const actions = Array.isArray(step.actions) && step.actions.length > 0 ? step.actions : [step];
     const actionNames = [];
+    const actionErrors = [];
     const linkMatches = [];
     const navigationFallbacks = [];
     let navigationTarget = "";
@@ -156,9 +267,15 @@ export async function runJourney({ cfg, cfgPath }) {
         if (result.navigationFallback) navigationFallbacks.push(result.navigationFallback);
         if (result.navigationTarget) navigationTarget = result.navigationTarget;
       } catch (err) {
-        warnProgress(`Action failed: ${actionItem.action || "unknown"} (${err?.message || err})`);
+        // A timed-out step keeps running until the browser closes: stay quiet.
+        if (journeyStopped) return;
+        const actionError = `${actionItem.action || "unknown"}: ${err?.message || err}`;
+        actionErrors.push(actionError.split("\n")[0]);
+        warnProgress(`Action failed: ${actionError}`);
       }
     }
+
+    step.error = actionErrors.join(" | ");
 
     step.actionTaken = actionNames.join(">") || "";
     step.linkMatch = linkMatches.join(">") || "";
@@ -173,153 +290,77 @@ export async function runJourney({ cfg, cfgPath }) {
         .catch(() => {});
     }
 
-    await settle(page, cfg);
-    await sleep(1000);
-    await autoScrollIfEnabled(page, cfg);
-    await settle(page, cfg);
+    await settleStep();
     const urlAfter = page.url();
     if (!urlChanged && urlAfter !== urlBefore) {
       urlChanged = true;
     }
 
     const windowStartMs = urlChanged ? Math.max(0, actionStartMs - 300) : actionStartMs;
-    windowStartTimes.set(idx, windowStartMs);
-    windowEndTimes.set(idx, Date.now());
-    step.pageUrl = page.url();
-    step.domNodes = await page.evaluate(() => {
-      function getNbChildsExcludingNestedSvg(element) {
-        if (element.nodeType === Node.TEXT_NODE) return 0;
-        let nbElements = 1;
-        for (let i = 0; i < element.childNodes.length; i += 1) {
-          if (element.childNodes[i].tagName !== "svg") {
-            nbElements += getNbChildsExcludingNestedSvg(element.childNodes[i]);
-          } else {
-            nbElements += 1;
-          }
-        }
-        return nbElements;
-      }
-
-      function getDomSizeWithoutSvg() {
-        let domSize = document.getElementsByTagName("*").length;
-        const svgElements = document.getElementsByTagName("svg");
-        for (let i = 0; i < svgElements.length; i += 1) {
-          domSize -= getNbChildsExcludingNestedSvg(svgElements[i]) - 1;
-        }
-        return domSize;
-      }
-
-      return Math.max(0, getDomSizeWithoutSvg());
-    });
+    return measureStep({ step, stepIndex: idx, name: startName, windowStartMs });
   }
 
+  const steps = cfg.steps || [];
+  const results = [];
+  const applyMode = createModeAccumulator(cfg.mode || "per_step");
+
+  // Step 0 is the landing on startUrl: its own actions are never run.
   logProgress(`Start at ${cfg.startUrl}`);
   const startActionMs = Date.now();
-  await page.goto(cfg.startUrl, { waitUntil: "domcontentloaded" });
-  await settle(page, cfg);
-  await sleep(1000);
-  await autoScrollIfEnabled(page, cfg);
-  await settle(page, cfg);
-  windowStartTimes.set(0, startActionMs);
-  windowEndTimes.set(0, Date.now());
-  const startPageUrl = page.url();
-  const startDomNodes = await page.evaluate(() => {
-    function getNbChildsExcludingNestedSvg(element) {
-      if (element.nodeType === Node.TEXT_NODE) return 0;
-      let nbElements = 1;
-      for (let i = 0; i < element.childNodes.length; i += 1) {
-        if (element.childNodes[i].tagName !== "svg") {
-          nbElements += getNbChildsExcludingNestedSvg(element.childNodes[i]);
-        } else {
-          nbElements += 1;
-        }
-      }
-      return nbElements;
-    }
-
-    function getDomSizeWithoutSvg() {
-      let domSize = document.getElementsByTagName("*").length;
-      const svgElements = document.getElementsByTagName("svg");
-      for (let i = 0; i < svgElements.length; i += 1) {
-        domSize -= getNbChildsExcludingNestedSvg(svgElements[i]) - 1;
-      }
-      return domSize;
-    }
-
-    return Math.max(0, getDomSizeWithoutSvg());
-  });
-
-  const baselineStepIndex = 0;
-  const results = [];
-
-  currentStepIndex = 0;
-  const startMetrics = await computeStepMetrics({
-      cfg,
-      step: cfg.steps?.[0],
-      stepIndex: 0,
-      baselineStepIndex,
-      cdpReq,
-      decompressedFallbackByRequestId,
-      windowStartTimes,
-      windowEndTimes,
-      page,
-    });
-  const startEcoindex = computeEcoindex({
-    domNodes: startDomNodes,
-    sizeKb: startMetrics.compressed_kb,
-    requests: startMetrics.request_count,
-  });
-  results.push({
-    name: cfg.steps?.[0]?.name || "Start",
-    page_url: startPageUrl,
-    dom_nodes: startDomNodes,
-    ecoindex_score: startEcoindex.score,
-    ecoindex_grade: startEcoindex.grade,
-    ...startMetrics,
-  });
+  await withTimeout(
+    (async () => {
+      await page.goto(cfg.startUrl, { waitUntil: "domcontentloaded" });
+      await settleStep();
+    })(),
+    stepTimeoutMs,
+    `Step 0 timed out after ${stepTimeoutMs} ms (${cfg.startUrl})`
+  );
+  results.push(await measureStep({
+    step: steps[0],
+    stepIndex: 0,
+    name: steps[0]?.name || "Start",
+    windowStartMs: startActionMs,
+  }));
   logProgress("Step 0 completed");
 
-  const steps = cfg.steps || [];
+  let incomplete = false;
   for (let i = 1; i < steps.length; i++) {
-    await doStep(steps[i], i);
-    const metrics = await computeStepMetrics({
-      cfg,
-      step: steps[i],
-      stepIndex: i,
-      baselineStepIndex,
-      cdpReq,
-      decompressedFallbackByRequestId,
-      windowStartTimes,
-      windowEndTimes,
-      page,
-    });
-    const ecoindex = computeEcoindex({
-      domNodes: steps[i].domNodes || 0,
-      sizeKb: metrics.compressed_kb,
-      requests: metrics.request_count,
-    });
-    results.push({
-      name: steps[i].name || `Step ${i}`,
-      page_url: steps[i].pageUrl || "",
-      dom_nodes: steps[i].domNodes || 0,
-      ecoindex_score: ecoindex.score,
-      ecoindex_grade: ecoindex.grade,
-      ...metrics,
-    });
-    const action = metrics?.notes?.action || "";
-    const linkMatch = metrics?.notes?.linkMatch || "";
+    let result;
+    try {
+      result = await withTimeout(doStep(steps[i], i), stepTimeoutMs, `Step ${i} timed out after ${stepTimeoutMs} ms`);
+    } catch (err) {
+      if (!(err instanceof StepTimeoutError)) throw err;
+      // The page state is unknown: stop here and report the steps measured so far.
+      warnProgress(`${err.message}. Remaining steps are skipped.`);
+      results.push({
+        stepIndex: i,
+        name: steps[i].name || `Step ${i}`,
+        page_url: page.url(),
+        timedOut: true,
+        error: err.message,
+      });
+      incomplete = true;
+      journeyStopped = true;
+      break;
+    }
+    results.push(result);
+    const { notes } = result;
     const target = steps[i]?.absoluteUrl || steps[i]?.url || "";
-    const matchSuffix = linkMatch ? ` match=${linkMatch}` : "";
-    const actionSuffix = action ? ` action=${action}` : "";
+    const matchSuffix = notes.linkMatch ? ` match=${notes.linkMatch}` : "";
+    const actionSuffix = notes.action ? ` action=${notes.action}` : "";
     const targetSuffix = target ? ` target=${target}` : "";
     logProgress(`Step ${i} completed${actionSuffix}${targetSuffix}${matchSuffix}`);
   }
 
-  logProgress(`Journey completed (${results.length} steps)`);
+  logProgress(`Journey ${incomplete ? "stopped" : "completed"} (${results.length} steps)`);
+
+  // Created only now: a run that fails before this point leaves no empty folder.
+  const { outDir, runId } = createRunFolder(outRoot, cfg.name, startedAt);
 
   const requestDetails = {
     runId,
     generatedAt: new Date().toISOString(),
+    viewport: { width: viewport.width, height: viewport.height },
     steps: [],
   };
   const report = {
@@ -331,6 +372,7 @@ export async function runJourney({ cfg, cfgPath }) {
     scroll: cfg.scroll || {},
     generatedAt: new Date().toISOString(),
     results,
+    journeyEcoindex: computeJourneyEcoindex(results),
   };
 
   for (let i = 0; i < results.length; i += 1) {
@@ -345,7 +387,6 @@ export async function runJourney({ cfg, cfgPath }) {
     const requests = [];
     for (const rec of cdpReq.values()) {
       if (rec.stepIndex !== result.stepIndex) continue;
-      if (typeof windowStartMs === "number" && rec.requestStartMs < windowStartMs) continue;
       if (typeof windowEndMs === "number" && rec.requestStartMs > windowEndMs) continue;
 
       requests.push({
@@ -369,16 +410,16 @@ export async function runJourney({ cfg, cfgPath }) {
       window_start_ms: windowStartMs,
       window_end_ms: windowEndMs,
       window_duration_ms: windowDurationMs,
+      error: result.error || "",
       requests,
     });
   }
-
-  await browser.close();
 
   return {
     report,
     outDir,
     runId,
     requestDetails,
+    incomplete,
   };
 }

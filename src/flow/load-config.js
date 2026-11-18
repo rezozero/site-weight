@@ -1,8 +1,41 @@
 import fs from "node:fs";
+import { register } from "node:module";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { FORCE_ESM_PARAM } from "../utils/force-esm-hooks.js";
+import { warnProgress } from "../utils/logger.js";
 import { isAbsoluteHttpUrl } from "../utils/url.js";
+import { isViewport } from "../utils/viewport.js";
+
+const JOURNEY_MODES = ["per_step", "cumulative"];
+
+const COMMONJS_GLOBAL_ERROR = /\b(module|exports|require) is not defined\b/;
+
+// journey.js is written as an ES module (`export default`), but Node reads a
+// `.js` file as CommonJS when the user's package.json has no "type": "module".
+// The hook forces the module format for this import only.
+async function importJourneyModule(cfgPath) {
+  register("../utils/force-esm-hooks.js", import.meta.url);
+
+  const esmUrl = pathToFileURL(cfgPath);
+  esmUrl.searchParams.set(FORCE_ESM_PARAM, "");
+  let esmModule;
+  try {
+    esmModule = await import(esmUrl.href);
+  } catch (error) {
+    if (!(error instanceof ReferenceError && COMMONJS_GLOBAL_ERROR.test(error.message))) {
+      throw error;
+    }
+  }
+  if (esmModule && "default" in esmModule) {
+    return esmModule;
+  }
+
+  // A CommonJS config (`module.exports = ...`) has no default export once read
+  // as ESM (or throws on `module`, depending on the Node version): load it the regular way.
+  return import(pathToFileURL(cfgPath).href);
+}
 
 function normalizeUrlEntry(url, startUrl) {
   if (typeof url !== "string" || !url.trim()) {
@@ -20,13 +53,32 @@ function normalizeUrlEntry(url, startUrl) {
   return { absoluteUrl, relativeUrl: url };
 }
 
+function isNonNegativeNumber(value) {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0;
+}
+
 function normalizeConfig(rawCfg) {
   if (!rawCfg || typeof rawCfg !== "object") {
     throw new Error("Invalid config: expected an object export from journey.js.");
   }
+  if (rawCfg.settle?.pauseMs !== undefined && !isNonNegativeNumber(rawCfg.settle.pauseMs)) {
+    throw new Error("Invalid config: settle.pauseMs must be a number of milliseconds, 0 or more.");
+  }
+  if (rawCfg.viewport !== undefined && !isViewport(rawCfg.viewport)) {
+    throw new Error("Invalid config: viewport must be { width, height }, in whole pixels.");
+  }
 
   const steps = Array.isArray(rawCfg.steps) ? rawCfg.steps : [];
   if (steps.length > 0) {
+    if (!isAbsoluteHttpUrl(rawCfg.startUrl)) {
+      throw new Error("Invalid config: steps require startUrl, an absolute http(s) URL.");
+    }
+    // Step 0 is the landing on startUrl: run-journey.js never runs its actions.
+    const first = steps[0] || {};
+    const firstHasActions = Array.isArray(first.actions) ? first.actions.length > 0 : false;
+    if (firstHasActions || (first.action && first.action !== "noop")) {
+      warnProgress("The first step measures the landing on startUrl: its action(s) are not run.");
+    }
     return { ...rawCfg, steps, usesUrls: false };
   }
 
@@ -84,7 +136,10 @@ export async function loadConfig(inputArg) {
     throw new Error(`Missing journey config: ${cfgPath}`);
   }
 
-  const cfgModule = await import(pathToFileURL(cfgPath));
+  const cfgModule = await importJourneyModule(cfgPath);
   const cfg = normalizeConfig(cfgModule?.default);
+  if (cfg.mode !== undefined && !JOURNEY_MODES.includes(cfg.mode)) {
+    throw new Error(`Invalid config: mode must be one of ${JOURNEY_MODES.join(", ")}.`);
+  }
   return { cfg, cfgPath };
 }

@@ -11,12 +11,12 @@ export default {
     mode: "page",
     stepPx: 800,
     pauseMs: 250,
-    maxMs: 12000,
+    maxMs: 30000,
     backToTop: false,
   },
   steps: [
     {
-      name: "Accueil SSR",
+      name: "Home (SSR)",
       action: "noop",
     },
     {
@@ -25,13 +25,13 @@ export default {
         {
           action: "click",
           selector: "a[href*='/contact/']",
-        }
-      ]
+        },
+      ],
     },
-	{
-      name: "Go to actuality",
+    {
+      name: "Go to news",
       action: "click",
-	  selector: "a[href*='/actualites/']",
+      selector: "a[href*='/actualites/']",
     },
   ],
 };
