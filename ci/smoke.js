@@ -58,6 +58,9 @@ const JOURNEYS = [
 
 const HUMAN_COLUMNS = 13;
 const TECHNICAL_COLUMNS = 22;
+// The error column, followed by the GES and water columns.
+const HUMAN_ERROR_COLUMN = HUMAN_COLUMNS - 3;
+const TECHNICAL_ERROR_COLUMN = TECHNICAL_COLUMNS - 3;
 
 // The GES and water cells of a row hold the footprint of its EcoIndex score.
 function checkFootprint(ges, water, score, label) {
@@ -181,9 +184,9 @@ function checkReports(journey, reportsRoot, baseUrl, label) {
 
   let previousRequests = 0;
   journey.expectedPaths.forEach((expectedPath, i) => {
-    const [index, , url, stepKb, compressedKb, , requests, domNodes, score, , ges, water] = human[i + 1];
+    const [index, , url, stepKb, compressedKb, , requests, domNodes, score, , , ges, water] = human[i + 1];
     const stepLabel = `${label} step ${index}`;
-    const error = human[i + 1][HUMAN_COLUMNS - 1];
+    const error = human[i + 1][HUMAN_ERROR_COLUMN];
     check(error === "", `${stepLabel}: unexpected error "${error}"`);
     check(url === new URL(expectedPath, baseUrl).toString(), `${stepLabel}: page url ${url}, expected ${expectedPath}`);
     check(Number(stepKb) >= 0 && Number(compressedKb) >= 0, `${stepLabel}: negative size (${stepKb} / ${compressedKb})`);
@@ -222,7 +225,7 @@ function checkReports(journey, reportsRoot, baseUrl, label) {
   });
   const pageViewAverage = (key) => pageViews.reduce((sum, view) => sum + view[key], 0) / pageViews.length;
   const averageRow = human.at(-1);
-  const [, , , , averageCompressed, , averageRequests, averageDomNodes, journeyScore, journeyGrade, journeyGes, journeyWater] =
+  const [, , , , averageCompressed, , averageRequests, averageDomNodes, journeyScore, journeyGrade, , journeyGes, journeyWater] =
     averageRow;
   checkFootprint(journeyGes, journeyWater, journeyScore, `${label} average row`);
   check(
@@ -249,8 +252,8 @@ function checkReports(journey, reportsRoot, baseUrl, label) {
       technicalAverage[8] === averageRequests &&
       technicalAverage[10] === journeyScore &&
       technicalAverage[11] === journeyGrade &&
-      technicalAverage[12] === journeyGes &&
-      technicalAverage[13] === journeyWater,
+      technicalAverage[20] === journeyGes &&
+      technicalAverage[21] === journeyWater,
     `${label}: technical average row does not match the human one`
   );
 
@@ -322,8 +325,8 @@ function checkTimeoutReports(reportDir, runId, baseUrl, label) {
   ));
 
   const stepRows = human.slice(1, -1);
-  const errors = stepRows.map((row) => row[HUMAN_COLUMNS - 1]);
-  const technicalErrors = technical.slice(1, -1).map((row) => row[TECHNICAL_COLUMNS - 1]);
+  const errors = stepRows.map((row) => row[HUMAN_ERROR_COLUMN]);
+  const technicalErrors = technical.slice(1, -1).map((row) => row[TECHNICAL_ERROR_COLUMN]);
   check(errors[0] === "" && errors[1] === "", `${label}: unexpected error on steps 0-1 ("${errors[0]}", "${errors[1]}")`);
   check(
     stepRows[1][2] === new URL("/page-2/", baseUrl).toString(),

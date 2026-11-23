@@ -1,10 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
 
+// The GES and water columns come last so that readers of the 2.0 reports keep
+// their column positions.
 const TECHNICAL_HEADER =
-  "step_index,step_name,page_url,dom_nodes,mode,decompressed_kb,decompressed_kb_delta,compressed_kb,request_count,window_duration_ms,ecoindex_score,ecoindex_grade,ecoindex_ges_gco2e,ecoindex_water_cl,perf_decoded_coverage_pct,decompressed_method,compressed_method,scroll_to_end,link_match,navigation_fallback,action,error";
+  "step_index,step_name,page_url,dom_nodes,mode,decompressed_kb,decompressed_kb_delta,compressed_kb,request_count,window_duration_ms,ecoindex_score,ecoindex_grade,perf_decoded_coverage_pct,decompressed_method,compressed_method,scroll_to_end,link_match,navigation_fallback,action,error,ecoindex_ges_gco2e,ecoindex_water_cl";
 const HUMAN_HEADER =
-  "index,name,url,taille (decompressé kB),taille (compressé kB),taille cumulative (decompressé kB),nombre de requete,dom_nodes,ecoindex,note,GES (gCO2e),eau (cl),erreur";
+  "index,name,url,taille (decompressé kB),taille (compressé kB),taille cumulative (decompressé kB),nombre de requete,dom_nodes,ecoindex,note,erreur,GES (gCO2e),eau (cl)";
 
 // Sums of one-decimal kB values drift (0.1 + 0.2): keep one decimal.
 function roundKb(kb) {
@@ -36,8 +38,8 @@ export function writeReport({ report, outDir, runId, requestDetails }) {
     // it stays out of the averages.
     if (r.timedOut) {
       const identity = [r.stepIndex, csvText(r.name), csvText(r.page_url)];
-      technicalCsvLines.push([...identity, ...Array(18).fill(""), csvText(r.error)].join(","));
-      humanCsvLines.push([...identity, ...Array(9).fill(""), csvText(r.error)].join(","));
+      technicalCsvLines.push([...identity, ...Array(16).fill(""), csvText(r.error), "", ""].join(","));
+      humanCsvLines.push([...identity, ...Array(7).fill(""), csvText(r.error), "", ""].join(","));
       continue;
     }
 
@@ -62,8 +64,6 @@ export function writeReport({ report, outDir, runId, requestDetails }) {
         r.window_duration_ms,
         r.ecoindex_score,
         r.ecoindex_grade || "",
-        r.ecoindex_ges_gco2e,
-        r.ecoindex_water_cl,
         r.notes.perfDecodedCoveragePct,
         csvText(r.notes.decompressedMethod),
         csvText(r.notes.compressedMethod),
@@ -72,6 +72,8 @@ export function writeReport({ report, outDir, runId, requestDetails }) {
         r.notes.navigationFallback || "",
         r.notes.action || "",
         csvText(r.error),
+        r.ecoindex_ges_gco2e,
+        r.ecoindex_water_cl,
       ].join(",")
     );
     humanCsvLines.push(
@@ -86,9 +88,9 @@ export function writeReport({ report, outDir, runId, requestDetails }) {
         r.dom_nodes,
         r.ecoindex_score,
         r.ecoindex_grade || "",
+        csvText(r.error),
         r.ecoindex_ges_gco2e,
         r.ecoindex_water_cl,
-        csvText(r.error),
       ].join(",")
     );
   }
@@ -119,9 +121,9 @@ export function writeReport({ report, outDir, runId, requestDetails }) {
         "",
         journeyScore,
         journeyGrade,
+        ...Array(8).fill(""),
         journeyGes,
         journeyWater,
-        ...Array(8).fill(""),
       ].join(",")
     );
     humanCsvLines.push(
@@ -136,9 +138,9 @@ export function writeReport({ report, outDir, runId, requestDetails }) {
         journeyDomNodes,
         journeyScore,
         journeyGrade,
+        "",
         journeyGes,
         journeyWater,
-        "",
       ].join(",")
     );
   }
