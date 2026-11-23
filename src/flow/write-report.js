@@ -1,33 +1,63 @@
 import fs from "node:fs";
 import path from "node:path";
 
-export function writeReport({ report, outDir, runId, requestDetails }) {
-  const technicalCsvLines = [
-    "step_index,step_name,page_url,dom_nodes,mode,decompressed_kb,decompressed_kb_delta,compressed_kb,request_count,window_duration_ms,ecoindex_score,ecoindex_grade,perf_decoded_coverage_pct,decompressed_method,compressed_method,scroll_to_end,link_match,navigation_fallback,action",
-  ];
+// The GES and water columns come last so that readers of the 2.0 reports keep
+// their column positions.
+const TECHNICAL_HEADER =
+  "step_index,step_name,page_url,dom_nodes,mode,decompressed_kb,decompressed_kb_delta,compressed_kb,request_count,window_duration_ms,ecoindex_score,ecoindex_grade,perf_decoded_coverage_pct,decompressed_method,compressed_method,scroll_to_end,link_match,navigation_fallback,action,error,ecoindex_ges_gco2e,ecoindex_water_cl";
+const HUMAN_HEADER =
+  "index,name,url,taille (decompressé kB),taille (compressé kB),taille cumulative (decompressé kB),nombre de requete,dom_nodes,ecoindex,note,erreur,GES (gCO2e),eau (cl)";
 
-  let previousDecompressed = 0;
-  let stepsCount = 0;
-  let sumDecompressed = 0;
+// Sums of one-decimal kB values drift (0.1 + 0.2): keep one decimal.
+function roundKb(kb) {
+  return Math.round(kb * 10) / 10;
+}
+
+function csvText(value) {
+  return `"${String(value ?? "").replace(/"/g, '""')}"`;
+}
+
+function average(sum, count) {
+  return (sum / count).toFixed(1);
+}
+
+// Each result holds the decompressed size of its own step. The reports show it
+// as the step size ("delta") and as a running total over the journey.
+export function writeReport({ report, outDir, runId, requestDetails }) {
+  const technicalCsvLines = [TECHNICAL_HEADER];
+  const humanCsvLines = [HUMAN_HEADER];
+
+  let measuredSteps = 0;
+  let cumulativeDecompressed = 0;
+  let sumCumulativeDecompressed = 0;
   let sumDecompressedDelta = 0;
   let sumCompressed = 0;
 
   for (const r of report.results) {
-    const decompressedDelta = stepsCount === 0 ? r.decompressed_kb : r.decompressed_kb - previousDecompressed;
-    previousDecompressed = r.decompressed_kb;
-    sumDecompressed += r.decompressed_kb;
+    // A step that timed out has no measurement: only its name and error, and
+    // it stays out of the averages.
+    if (r.timedOut) {
+      const identity = [r.stepIndex, csvText(r.name), csvText(r.page_url)];
+      technicalCsvLines.push([...identity, ...Array(16).fill(""), csvText(r.error), "", ""].join(","));
+      humanCsvLines.push([...identity, ...Array(7).fill(""), csvText(r.error), "", ""].join(","));
+      continue;
+    }
+
+    const decompressedDelta = r.step_decompressed_kb;
+    cumulativeDecompressed = roundKb(cumulativeDecompressed + decompressedDelta);
+    sumCumulativeDecompressed += cumulativeDecompressed;
     sumDecompressedDelta += decompressedDelta;
     sumCompressed += r.compressed_kb;
-    stepsCount += 1;
+    measuredSteps += 1;
 
     technicalCsvLines.push(
       [
         r.stepIndex,
-        `"${String(r.name).replace(/"/g, '""')}"`,
-        `"${String(r.page_url || "").replace(/"/g, '""')}"`,
+        csvText(r.name),
+        csvText(r.page_url),
         r.dom_nodes,
         r.mode,
-        r.decompressed_kb,
+        cumulativeDecompressed,
         decompressedDelta,
         r.compressed_kb,
         r.request_count,
@@ -35,94 +65,88 @@ export function writeReport({ report, outDir, runId, requestDetails }) {
         r.ecoindex_score,
         r.ecoindex_grade || "",
         r.notes.perfDecodedCoveragePct,
-        `"${r.notes.decompressedMethod.replace(/"/g, '""')}"`,
-        `"${r.notes.compressedMethod.replace(/"/g, '""')}"`,
+        csvText(r.notes.decompressedMethod),
+        csvText(r.notes.compressedMethod),
         r.notes.scrollToEnd ? "true" : "false",
         r.notes.linkMatch || "",
         r.notes.navigationFallback || "",
         r.notes.action || "",
+        csvText(r.error),
+        r.ecoindex_ges_gco2e,
+        r.ecoindex_water_cl,
+      ].join(",")
+    );
+    humanCsvLines.push(
+      [
+        r.stepIndex,
+        csvText(r.name),
+        csvText(r.page_url),
+        decompressedDelta,
+        r.compressed_kb,
+        cumulativeDecompressed,
+        r.request_count,
+        r.dom_nodes,
+        r.ecoindex_score,
+        r.ecoindex_grade || "",
+        csvText(r.error),
+        r.ecoindex_ges_gco2e,
+        r.ecoindex_water_cl,
       ].join(",")
     );
   }
 
-  if (stepsCount > 0) {
+  if (measuredSteps > 0) {
+    const averageDelta = average(sumDecompressedDelta, measuredSteps);
+    // The journey EcoIndex and the three averages it is computed from, per
+    // page view; the decompressed sizes average the column above them.
+    const journey = report.journeyEcoindex;
+    const averageCompressed = journey ? journey.compressedKb.toFixed(1) : average(sumCompressed, measuredSteps);
+    const journeyRequests = journey ? journey.requests.toFixed(1) : "";
+    const journeyDomNodes = journey ? journey.domNodes.toFixed(1) : "";
+    const journeyScore = journey ? journey.score : "";
+    const journeyGrade = journey ? journey.grade : "";
+    const journeyGes = journey ? journey.ges : "";
+    const journeyWater = journey ? journey.water : "";
     technicalCsvLines.push(
       [
         "Moyenne",
         "",
         "",
+        journeyDomNodes,
+        "",
+        average(sumCumulativeDecompressed, measuredSteps),
+        averageDelta,
+        averageCompressed,
+        journeyRequests,
+        "",
+        journeyScore,
+        journeyGrade,
+        ...Array(8).fill(""),
+        journeyGes,
+        journeyWater,
+      ].join(",")
+    );
+    humanCsvLines.push(
+      [
+        "Moyenne",
         "",
         "",
-        (sumDecompressed / stepsCount).toFixed(1),
-        (sumDecompressedDelta / stepsCount).toFixed(1),
-        (sumCompressed / stepsCount).toFixed(1),
+        averageDelta,
+        averageCompressed,
         "",
+        journeyRequests,
+        journeyDomNodes,
+        journeyScore,
+        journeyGrade,
         "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        "",
+        journeyGes,
+        journeyWater,
       ].join(",")
     );
   }
 
   const technicalCsvPath = path.join(outDir, `technical_${runId}.csv`);
   fs.writeFileSync(technicalCsvPath, technicalCsvLines.join("\n"), "utf-8");
-
-  const humanCsvLines = [
-    "index,name,url,taille (decompressé kB),taille (compressé kB),taille cumulative (decompressé kB),nombre de requete,dom_nodes,ecoindex,note",
-  ];
-
-  let previousHumanDecompressed = 0;
-  let sumHumanDelta = 0;
-  let sumHumanCompressed = 0;
-  let sumHumanCumulative = 0;
-  let humanCount = 0;
-
-  for (const r of report.results) {
-    const decompressedDelta = humanCount === 0 ? r.decompressed_kb : r.decompressed_kb - previousHumanDecompressed;
-    previousHumanDecompressed = r.decompressed_kb;
-    sumHumanDelta += decompressedDelta;
-    sumHumanCompressed += r.compressed_kb;
-    sumHumanCumulative += r.decompressed_kb;
-    humanCount += 1;
-
-    humanCsvLines.push(
-      [
-        r.stepIndex,
-        `"${String(r.name).replace(/"/g, '""')}"`,
-        `"${String(r.page_url || "").replace(/"/g, '""')}"`,
-        decompressedDelta,
-        r.compressed_kb,
-        r.decompressed_kb,
-        r.request_count,
-        r.dom_nodes,
-        r.ecoindex_score,
-        r.ecoindex_grade || "",
-      ].join(",")
-    );
-  }
-
-  if (humanCount > 0) {
-    humanCsvLines.push(
-      [
-        "Moyenne",
-        "",
-        "",
-        (sumHumanDelta / humanCount).toFixed(1),
-        (sumHumanCompressed / humanCount).toFixed(1),
-        "",
-        "",
-        "",
-        "",
-        "",
-      ].join(",")
-    );
-  }
 
   const csvPath = path.join(outDir, `${runId}.csv`);
   fs.writeFileSync(csvPath, humanCsvLines.join("\n"), "utf-8");
