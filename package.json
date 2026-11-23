@@ -1,6 +1,6 @@
 {
   "name": "@rezo-zero/site-weight",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "CLI to measure network weight of a user journey with Playwright.",
   "repository": {
     "type": "git",

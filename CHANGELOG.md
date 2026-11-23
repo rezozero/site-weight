@@ -2,6 +2,12 @@
 
 All notable changes to site-weight will be documented in this file.
 
+## [2.1.0](https://github.com/rezozero/site-weight/compare/2.0.0...2.1.0) - 2026-11-23
+
+### Features
+
+- add greenhouse gas and water columns to the reports ([#16](https://github.com/rezozero/site-weight/issues/16)) - ([bf296f4](https://github.com/rezozero/site-weight/commit/bf296f43b34c1f89b1eca2bc6f3e458f237a3210))
+
 ## [2.0.0](https://github.com/rezozero/site-weight/compare/1.0.0...2.0.0) - 2026-11-18
 
 ### ⚠ Breaking changes
