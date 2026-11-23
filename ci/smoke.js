@@ -12,7 +12,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
-import { computeEcoindex, computeJourneyEcoindex } from "../src/utils/ecoindex.js";
+import { computeEcoindex, computeFootprint, computeJourneyEcoindex } from "../src/utils/ecoindex.js";
 import { createRunFolder } from "../src/utils/run-folder.js";
 
 const CI_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -56,8 +56,20 @@ const JOURNEYS = [
   },
 ];
 
-const HUMAN_COLUMNS = 11;
-const TECHNICAL_COLUMNS = 20;
+const HUMAN_COLUMNS = 13;
+const TECHNICAL_COLUMNS = 22;
+// The error column, followed by the GES and water columns.
+const HUMAN_ERROR_COLUMN = HUMAN_COLUMNS - 3;
+const TECHNICAL_ERROR_COLUMN = TECHNICAL_COLUMNS - 3;
+
+// The GES and water cells of a row hold the footprint of its EcoIndex score.
+function checkFootprint(ges, water, score, label) {
+  const expected = computeFootprint(Number(score));
+  check(
+    Number(ges) === expected.ges && Number(water) === expected.water,
+    `${label}: GES / water "${ges}" / "${water}", expected ${expected.ges} / ${expected.water} for EcoIndex ${score}`
+  );
+}
 
 // EcoIndex DOM count of ci/site/index.html: its elements plus the two of the
 // open shadow root, minus the three descendants of the inline <svg>.
@@ -172,9 +184,9 @@ function checkReports(journey, reportsRoot, baseUrl, label) {
 
   let previousRequests = 0;
   journey.expectedPaths.forEach((expectedPath, i) => {
-    const [index, , url, stepKb, compressedKb, , requests, domNodes, score] = human[i + 1];
+    const [index, , url, stepKb, compressedKb, , requests, domNodes, score, , , ges, water] = human[i + 1];
     const stepLabel = `${label} step ${index}`;
-    const error = human[i + 1][HUMAN_COLUMNS - 1];
+    const error = human[i + 1][HUMAN_ERROR_COLUMN];
     check(error === "", `${stepLabel}: unexpected error "${error}"`);
     check(url === new URL(expectedPath, baseUrl).toString(), `${stepLabel}: page url ${url}, expected ${expectedPath}`);
     check(Number(stepKb) >= 0 && Number(compressedKb) >= 0, `${stepLabel}: negative size (${stepKb} / ${compressedKb})`);
@@ -184,6 +196,7 @@ function checkReports(journey, reportsRoot, baseUrl, label) {
     }
     // EcoIndex scores are whole numbers.
     check(/^\d+$/.test(score), `${stepLabel}: EcoIndex "${score}" is not a whole number`);
+    checkFootprint(ges, water, score, stepLabel);
     if (i === 0) {
       check(Number(requests) >= 4, `${stepLabel}: ${requests} requests, expected the page, its CSS and its two images`);
     } else if (journey.cumulative) {
@@ -212,7 +225,9 @@ function checkReports(journey, reportsRoot, baseUrl, label) {
   });
   const pageViewAverage = (key) => pageViews.reduce((sum, view) => sum + view[key], 0) / pageViews.length;
   const averageRow = human.at(-1);
-  const [, , , , averageCompressed, , averageRequests, averageDomNodes, journeyScore, journeyGrade] = averageRow;
+  const [, , , , averageCompressed, , averageRequests, averageDomNodes, journeyScore, journeyGrade, , journeyGes, journeyWater] =
+    averageRow;
+  checkFootprint(journeyGes, journeyWater, journeyScore, `${label} average row`);
   check(
     averageRequests === pageViewAverage("requests").toFixed(1),
     `${label}: average requests per page view ${averageRequests}, expected ${pageViewAverage("requests").toFixed(1)}`
@@ -236,7 +251,9 @@ function checkReports(journey, reportsRoot, baseUrl, label) {
       technicalAverage[7] === averageCompressed &&
       technicalAverage[8] === averageRequests &&
       technicalAverage[10] === journeyScore &&
-      technicalAverage[11] === journeyGrade,
+      technicalAverage[11] === journeyGrade &&
+      technicalAverage[20] === journeyGes &&
+      technicalAverage[21] === journeyWater,
     `${label}: technical average row does not match the human one`
   );
 
@@ -262,6 +279,15 @@ function checkEcoindexComputation() {
     // Raw score 80.25: EcoIndex rounds it to 80 before grading it, so B, not A.
     const boundary = computeEcoindex({ domNodes: 470, sizeKb: 0, requests: 0 });
     check(boundary.score === 80 && boundary.grade === "B", `${label}: ${JSON.stringify(boundary)}, expected 80 (B)`);
+    // EcoIndex_python: 2 + 2 * (50 - 80) / 100 gCO2e and 3 + 3 * (50 - 80) / 100 cl.
+    check(boundary.ges === 1.4 && boundary.water === 2.1, `${label}: footprint ${JSON.stringify(boundary)}, expected 1.4 gCO2e / 2.1 cl`);
+    for (const [score, ges, water] of [[0, 3, 4.5], [50, 2, 3], [100, 1, 1.5], [37, 2.26, 3.39]]) {
+      const footprint = computeFootprint(score);
+      check(
+        footprint.ges === ges && footprint.water === water,
+        `${label}: footprint of ${score} ${JSON.stringify(footprint)}, expected ${ges} gCO2e / ${water} cl`
+      );
+    }
 
     // Same URL (hash aside): one page view; the failed step is left out.
     const journey = computeJourneyEcoindex([
@@ -299,8 +325,8 @@ function checkTimeoutReports(reportDir, runId, baseUrl, label) {
   ));
 
   const stepRows = human.slice(1, -1);
-  const errors = stepRows.map((row) => row[HUMAN_COLUMNS - 1]);
-  const technicalErrors = technical.slice(1, -1).map((row) => row[TECHNICAL_COLUMNS - 1]);
+  const errors = stepRows.map((row) => row[HUMAN_ERROR_COLUMN]);
+  const technicalErrors = technical.slice(1, -1).map((row) => row[TECHNICAL_ERROR_COLUMN]);
   check(errors[0] === "" && errors[1] === "", `${label}: unexpected error on steps 0-1 ("${errors[0]}", "${errors[1]}")`);
   check(
     stepRows[1][2] === new URL("/page-2/", baseUrl).toString(),

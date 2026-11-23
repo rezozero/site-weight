@@ -116,7 +116,17 @@ export function computeEcoindex({ domNodes, sizeKb, requests }) {
     }
   }
 
-  return { score, grade };
+  return { score, grade, ...computeFootprint(score) };
+}
+
+// Greenhouse gas emissions (gCO2e) and water consumption (cl) of a page view,
+// derived from its score with the formulas and rounding of EcoIndex_python
+// (components/ecoindex/compute/ecoindex.py). They are not measured.
+export function computeFootprint(score) {
+  return {
+    ges: roundHalfEven(100 * (2 + (2 * (50 - score)) / 100)) / 100,
+    water: roundHalfEven(100 * (3 + (3 * (50 - score)) / 100)) / 100,
+  };
 }
 
 function withoutHash(url) {
