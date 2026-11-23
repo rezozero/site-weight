@@ -59,6 +59,7 @@ The last row of the reports, "Moyenne", gives one EcoIndex for the whole journey
 
 - A page view starts on the first step and on each step that ends on another URL. A step that stays on the same URL (opening a menu, switching a tab, filtering a list) belongs to the current page view: its requests and transferred data add to it, and the page view keeps the largest DOM it reached.
 - The transferred data, the number of requests and the DOM size are averaged over the page views, and EcoIndex is computed from these three averages. The row shows these averages next to the score.
+- Like every row, it also gives the greenhouse gas emissions (gCO2e) and the water consumption (cl) of a page view. EcoIndex derives both from the score with fixed formulas; the tool applies the same ones. They are estimates computed from the score, not measurements.
 - Steps whose action failed are left out.
 
 What it means:

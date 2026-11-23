@@ -237,6 +237,8 @@ async function runJourneyInBrowser({ cfg, browser, stepTimeoutMs, outRoot, viewp
       dom_nodes: domNodes,
       ecoindex_score: ecoindex.score,
       ecoindex_grade: ecoindex.grade,
+      ecoindex_ges_gco2e: ecoindex.ges,
+      ecoindex_water_cl: ecoindex.water,
       error: step?.error || "",
       ...metrics,
     };
